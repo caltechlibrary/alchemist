@@ -12,7 +12,7 @@ import cascflow
 # # detect sequence indicators
 # # validate archival objects
 
-# ## run
+# ## execute
 # # move files to batch directory
 # # find_archival_object()
 # # get_arrangement()
@@ -37,11 +37,11 @@ import cascflow
 def main():
     print("Hello from alchemist!")
     parser = argparse.ArgumentParser(
-        description="Digital object publication workflow for Caltech Archives."
+        description="Publication workflow for Caltech Archives."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Subcommand: validate
+    # subcommand: validate
     validate_parser = subparsers.add_parser(
         "validate", help="Validate connections, files, and data."
     )
@@ -52,16 +52,16 @@ def main():
         "--batch-set-id", required=True, help="Batch set ID for validation."
     )
 
-    # Subcommand: run
-    run_parser = subparsers.add_parser("run", help="Run the distillery process.")
-    run_parser.add_argument(
+    # subcommand: execute
+    execute_parser = subparsers.add_parser("execute", help="Execute the publication process.")
+    execute_parser.add_argument(
         "--destinations", required=True, help="JSON string of destinations."
     )
-    run_parser.add_argument(
+    execute_parser.add_argument(
         "--batch-set-id", required=True, help="Batch set ID for processing."
     )
 
-    # Subcommand: regenerate
+    # subcommand: regenerate
     regenerate_parser = subparsers.add_parser(
         "regenerate", help="Regenerate files for a component, collection, or all items."
     )
@@ -77,11 +77,11 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle the commands
+    # handle the commands
     if args.command == "validate":
         cascflow.validate(args.destinations, args.batch_set_id)
-    # elif args.command == "run":
-    #     run(args.destinations, args.batch_set_id)
+    elif args.command == "execute":
+        cascflow.execute(args.destinations, args.batch_set_id)
     # elif args.command == "regenerate":
     #     alchemist_regenerate(
     #         component_id=args.component_id,
