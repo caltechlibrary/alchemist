@@ -1,0 +1,19 @@
+version = 1
+revision = 1
+requires-python = ">=3.13"
+
+[[package]]
+name = "alchemist"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "cascflow" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "cascflow", git = "https://github.com/t4k/cascflow" }]
+
+[[package]]
+name = "cascflow"
+version = "0.1.0"
+source = { git = "https://github.com/t4k/cascflow#4dbeaea1e23411c1417471ceee9473e43ce9106a" }
