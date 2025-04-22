@@ -11,9 +11,9 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "cascflow", git = "https://github.com/t4k/cascflow" }]
+requires-dist = [{ name = "cascflow", git = "https://github.com/t4k/cascflow?branch=main" }]
 
 [[package]]
 name = "cascflow"
 version = "0.1.0"
-source = { git = "https://github.com/t4k/cascflow@main" }
+source = { git = "https://github.com/t4k/cascflow?branch=main#8ea2640a44b3de56c57de4a03549f76308e82364" }
