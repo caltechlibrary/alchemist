@@ -65,7 +65,7 @@ wheels = [
 [[package]]
 name = "cascflow"
 version = "0.2.1"
-source = { git = "https://github.com/t4k/cascflow.git?rev=main#27aac5f23fb28818ede48158f46e9f44a61d1c4e" }
+source = { git = "https://github.com/t4k/cascflow.git?rev=main#3ff4ce024525b15765c3097052a27c602ab38602" }
 dependencies = [
     { name = "archivessnake" },
     { name = "backoff" },
