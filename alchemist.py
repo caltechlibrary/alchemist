@@ -102,7 +102,6 @@ def is_archival_object_valid_for_publication(archival_object, **kwargs):
 cascflow.register_archival_object_valid_for_publication_checker(is_archival_object_valid_for_publication)
 
 def main():
-    print("Hello from alchemist!")
     parser = argparse.ArgumentParser(
         description="Publication workflow for Caltech Archives."
     )
