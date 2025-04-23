@@ -113,10 +113,10 @@ def main():
         "validate", help="Validate connections, files, and data."
     )
     validate_parser.add_argument(
-        "--destinations", required=True, help="JSON string of destinations."
+        "--source-volume", required=True, help="String. Name of source volume."
     )
     validate_parser.add_argument(
-        "--overwrite", action="store_true", help="Overwrite existing Digital Objects."
+        "--overwrite", action="store_true", help="Boolean. Overwrite existing Digital Objects."
     )
 
     # subcommand: execute
@@ -146,7 +146,7 @@ def main():
 
     # handle the commands
     if args.command == "validate":
-        cascflow.validate(args.destinations, pipeline="publication", overwrite=args.overwrite)
+        cascflow.validate(args.source_volume, pipeline="publication", overwrite=args.overwrite)
     elif args.command == "execute":
         cascflow.execute(args.destinations, args.batch_set_id)
     # elif args.command == "regenerate":
