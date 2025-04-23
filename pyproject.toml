@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "cascflow",
+    "python-decouple>=3.8",
 ]
 
 [tool.uv.sources]
-cascflow = { git = "https://github.com/t4k/cascflow", branch = "main" }
+cascflow = { git = "https://github.com/t4k/cascflow.git", rev = "main" }

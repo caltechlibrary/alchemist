@@ -2,8 +2,14 @@
 # RENDER AND PUBLISH ACCESS PAGES AND ASSETS
 
 import argparse
+import logging
+
+from decouple import config
 
 import cascflow
+
+cascflow.setup_logging('settings.ini')
+logger = logging.getLogger('alchemist')
 
 
 # ## validate
@@ -33,6 +39,67 @@ import cascflow
 # #     accessDistiller.loop_over_derivative_structure(self.variables)
 # # move to completed directory
 
+def is_archival_object_valid_for_publication(archival_object, **kwargs):
+    if not archival_object["publish"]:
+        message = "‼️ ARCHIVAL OBJECT NOT PUBLISHED: [**{}**]({}/resolve/readonly?uri={})".format(
+            archival_object["title"],
+            config("ASPACE_STAFF_URL"),
+            archival_object["uri"],
+        )
+        logger.error(message)
+        return False
+    elif archival_object["has_unpublished_ancestor"]:
+        message = "‼️ ARCHIVAL OBJECT HAS UNPUBLISHED ANCESTOR: [**{}**]({}/resolve/readonly?uri={})".format(
+            archival_object["title"],
+            config("ASPACE_STAFF_URL"),
+            archival_object["uri"],
+        )
+        logger.error(message)
+        return False
+    ## check for existing digital_object["file_versions"]
+    elif archival_object.get("instances"):
+        digital_object_count = 0
+        for instance in archival_object["instances"]:
+            if "digital_object" in instance.keys():
+                digital_object_count += 1
+        if digital_object_count > 1:
+            message = "‼️ MULTIPLE DIGITAL OBJECTS FOUND: [**{}**]({}/resolve/readonly?uri={})".format(
+                archival_object["title"],
+                config("ASPACE_STAFF_URL"),
+                archival_object["uri"],
+            )
+            logger.error(message)
+            return False
+        elif digital_object_count == 1:
+            if instance["digital_object"]["_resolved"].get(
+                "file_versions"
+            ) and not kwargs.get("overwrite", False):
+                message = "‼️ DIGITAL OBJECT ALREADY HAS FILE VERSIONS: [**{}**]({}/resolve/readonly?uri={})".format(
+                    instance["digital_object"]["_resolved"]["title"],
+                    config("ASPACE_STAFF_URL"),
+                    instance["digital_object"]["ref"],
+                )
+                logger.error(message)
+                return False
+            elif instance["digital_object"]["_resolved"].get("file_versions"):
+                message = "⚠️ EXISTING WEB ACCESS FILES WILL BE REPLACED AND DIGITAL OBJECT RECORDS WILL BE UPDATED: [**{}**]({}/resolve/readonly?uri={})".format(
+                    instance["digital_object"]["_resolved"]["title"],
+                    config("ASPACE_STAFF_URL"),
+                    instance["digital_object"]["ref"],
+                )
+                logger.warning(message)
+                return True
+            else:
+                ## no file versions exist yet
+                return True
+        else:
+            ## go through with creating a new digital_object
+            return True
+    else:
+        ## ensure there is a return value
+        return True
+
+cascflow.register_archival_object_valid_for_publication_checker(is_archival_object_valid_for_publication)
 
 def main():
     print("Hello from alchemist!")
@@ -49,7 +116,7 @@ def main():
         "--destinations", required=True, help="JSON string of destinations."
     )
     validate_parser.add_argument(
-        "--batch-set-id", required=True, help="Batch set ID for validation."
+        "--overwrite", action="store_true", help="Overwrite existing Digital Objects."
     )
 
     # subcommand: execute
@@ -79,7 +146,7 @@ def main():
 
     # handle the commands
     if args.command == "validate":
-        cascflow.validate(args.destinations, args.batch_set_id)
+        cascflow.validate(args.destinations, pipeline="publication", overwrite=args.overwrite)
     elif args.command == "execute":
         cascflow.execute(args.destinations, args.batch_set_id)
     # elif args.command == "regenerate":
