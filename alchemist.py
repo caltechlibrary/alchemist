@@ -43,7 +43,7 @@ def is_archival_object_valid_for_publication(archival_object, **kwargs):
     if not archival_object["publish"]:
         message = "‼️ ARCHIVAL OBJECT NOT PUBLISHED: [**{}**]({}/resolve/readonly?uri={})".format(
             archival_object["title"],
-            config("ASPACE_STAFF_URL"),
+            config("ARCHIVESSPACE_STAFF_URL"),
             archival_object["uri"],
         )
         logger.error(message)
@@ -51,7 +51,7 @@ def is_archival_object_valid_for_publication(archival_object, **kwargs):
     elif archival_object["has_unpublished_ancestor"]:
         message = "‼️ ARCHIVAL OBJECT HAS UNPUBLISHED ANCESTOR: [**{}**]({}/resolve/readonly?uri={})".format(
             archival_object["title"],
-            config("ASPACE_STAFF_URL"),
+            config("ARCHIVESSPACE_STAFF_URL"),
             archival_object["uri"],
         )
         logger.error(message)
@@ -65,7 +65,7 @@ def is_archival_object_valid_for_publication(archival_object, **kwargs):
         if digital_object_count > 1:
             message = "‼️ MULTIPLE DIGITAL OBJECTS FOUND: [**{}**]({}/resolve/readonly?uri={})".format(
                 archival_object["title"],
-                config("ASPACE_STAFF_URL"),
+                config("ARCHIVESSPACE_STAFF_URL"),
                 archival_object["uri"],
             )
             logger.error(message)
@@ -76,7 +76,7 @@ def is_archival_object_valid_for_publication(archival_object, **kwargs):
             ) and not kwargs.get("overwrite", False):
                 message = "‼️ DIGITAL OBJECT ALREADY HAS FILE VERSIONS: [**{}**]({}/resolve/readonly?uri={})".format(
                     instance["digital_object"]["_resolved"]["title"],
-                    config("ASPACE_STAFF_URL"),
+                    config("ARCHIVESSPACE_STAFF_URL"),
                     instance["digital_object"]["ref"],
                 )
                 logger.error(message)
@@ -84,7 +84,7 @@ def is_archival_object_valid_for_publication(archival_object, **kwargs):
             elif instance["digital_object"]["_resolved"].get("file_versions"):
                 message = "⚠️ EXISTING WEB ACCESS FILES WILL BE REPLACED AND DIGITAL OBJECT RECORDS WILL BE UPDATED: [**{}**]({}/resolve/readonly?uri={})".format(
                     instance["digital_object"]["_resolved"]["title"],
-                    config("ASPACE_STAFF_URL"),
+                    config("ARCHIVESSPACE_STAFF_URL"),
                     instance["digital_object"]["ref"],
                 )
                 logger.warning(message)
