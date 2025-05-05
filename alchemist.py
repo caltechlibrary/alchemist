@@ -42,7 +42,7 @@ logger = logging.getLogger('alchemist')
 # #     accessDistiller.loop_over_derivative_structure(self.variables)
 # # move to completed directory
 
-def is_archival_object_valid_for_publication(archival_object: dict, overwrite: bool = False) -> bool:
+def is_archival_object_eligible_for_publication(archival_object: dict, overwrite: bool = False) -> bool:
     if not archival_object["publish"]:
         message = "‼️ ARCHIVAL OBJECT NOT PUBLISHED: [**{}**]({}/resolve/readonly?uri={})".format(
             archival_object["title"],
@@ -114,8 +114,8 @@ def is_publication_file_supported(entry: Path) -> bool:
 
 def validate_for_publication(validation_results: dict, overwrite: bool = False) -> None:
     source_path = Path(validation_results.get("source_path"))
-    valid_archival_objects = []
-    invalid_archival_objects = []
+    eligible_archival_objects = []
+    ineligible_archival_objects = []
     nested_directories = validation_results.get("nested_directories", [])
     empty_directories = validation_results.get("empty_directories", [])
     file_count = validation_results.get("file_count", 0)
@@ -124,10 +124,10 @@ def validate_for_publication(validation_results: dict, overwrite: bool = False) 
     for entry in source_path.iterdir():
         ## validate the entry (file or directory)
         if (archival_object := cascflow.find_archival_object(entry.stem)):
-            if is_archival_object_valid_for_publication(archival_object, overwrite):
-                valid_archival_objects.append(entry.stem)
+            if is_archival_object_eligible_for_publication(archival_object, overwrite):
+                eligible_archival_objects.append(entry.stem)
             else:
-                invalid_archival_objects.append(entry.stem)
+                ineligible_archival_objects.append(entry.stem)
         if entry.is_file():
             ## check for file types that are unsupported in publication
             if not is_publication_file_supported(entry):
@@ -140,21 +140,21 @@ def validate_for_publication(validation_results: dict, overwrite: bool = False) 
                     if not is_publication_file_supported(entry):
                         unsupported_files.append(entry)
     ## messaging
-    if valid_archival_objects:
-        for valid_archival_object in valid_archival_objects:
-            logger.info(f"🉑 {valid_archival_object}")
-        logger.info(f"🗂 ARCHIVAL OBJECT COUNT: {len(valid_archival_objects)}")
+    if eligible_archival_objects:
+        for eligible_archival_object in eligible_archival_objects:
+            logger.info(f"🉑 {eligible_archival_object}")
+        logger.info(f"🗂 ARCHIVAL OBJECT COUNT: {len(eligible_archival_objects)}")
         logger.info(f"📄 FILE COUNT: {file_count}")
     ## validation and messaging
     if file_count == 0:
         message = "❌ NO FILES FOUND"
         logger.error(message)
         raise FileNotFoundError(message)
-    if invalid_archival_objects:
-        message = "❌ INVALID ARCHIVAL OBJECTS FOUND"
+    if ineligible_archival_objects:
+        message = "❌ INELIGIBLE ARCHIVAL OBJECTS FOUND"
         logger.error(message)
-        for invalid_archival_object in invalid_archival_objects:
-            logger.error(f"❌ {invalid_archival_object}")
+        for ineligible_archival_object in ineligible_archival_objects:
+            logger.error(f"❌ {ineligible_archival_object}")
         raise RuntimeError(message)
     if nested_directories:
         message = "❌ NESTED DIRECTORIES FOUND"
