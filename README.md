@@ -13,3 +13,7 @@ uv add --editable ../cascflow
 ```sh
 uv add git+https://github.com/t4k/cascflow --branch main
 ```
+
+```sh
+uv add git+https://github.com/t4k/cascflow --branch main --upgrade-package cascflow
+```
