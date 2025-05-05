@@ -106,7 +106,7 @@ def is_archival_object_valid_for_publication(archival_object: dict, overwrite: b
 def is_publication_file_supported(entry: Path) -> bool:
     type, encoding = mimetypes.guess_type(entry)
     ## TODO set supported types in configuration
-    if type.startswith("image/") or type.endswith("/mp4"):
+    if type and (type.startswith("image/") or type.endswith("/mp4")):
         return True
     else:
         return False
