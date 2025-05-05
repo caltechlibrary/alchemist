@@ -137,8 +137,8 @@ def validate_for_publication(validation_results: dict, overwrite: bool = False) 
             for child in entry.iterdir():
                 if child.is_file():
                     ## check for file types that are unsupported in publication
-                    if not is_publication_file_supported(entry):
-                        unsupported_files.append(entry)
+                    if not is_publication_file_supported(child):
+                        unsupported_files.append(child)
     ## messaging
     if eligible_archival_objects:
         for eligible_archival_object in eligible_archival_objects:
