@@ -1056,6 +1056,7 @@ def is_archival_object_eligible_for_publication(archival_object: dict, overwrite
             logger.error(message)
             return False
         elif digital_object_count == 1:
+            logger.debug(f"🐞 DIGITAL_OBJECT_RESOLVED_FILE_VERSIONS: {instance['digital_object']['_resolved'].get('file_versions')}")
             logger.debug(f"🐞 OVERWRITE: {overwrite}")
             if instance["digital_object"]["_resolved"].get(
                 "file_versions"
