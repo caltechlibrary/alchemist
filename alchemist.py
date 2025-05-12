@@ -670,7 +670,7 @@ def format_archival_object_notes_display(archival_object):
     return notes_display
 
 
-def generate_archival_object_page(build_directory: tempfile, archival_object: dict, arrangement: dict, mimetype: str = "") -> None:
+def generate_archival_object_page(build_directory: tempfile, archival_object: dict, arrangement: dict, mimetype: str) -> None:
     try:
         logger.debug(f"🐞 BUILD_DIRECTORY.NAME: {build_directory.name}")
         environment = jinja2.Environment(
@@ -1013,6 +1013,7 @@ def loop_over_archival_object_files(build_directory: tempfile, filepaths: list[P
 def archival_object_level_processing(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict) -> None:
     logger.info(f'ℹ️  {archival_object["component_id"]}')
     # TODO consider conditions for identifiying non-image file types
+    mimetype = ""
     if filepaths and len(filepaths) == 1:
         type, encoding = mimetypes.guess_type(filepaths[0])
         if type == "video/mp4":
