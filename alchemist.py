@@ -755,7 +755,7 @@ def generate_archival_object_page(build_directory: tempfile, archival_object: di
                     extents=extents_display,
                     subjects=subjects,
                     notes=notes_display,
-                    archivesspace_public_url=config("ASPACE_PUBLIC_URL"),
+                    archivesspace_public_url=config("ARCHIVESSPACE_PUBLIC_URL"),
                     archival_object_uri=archival_object["uri"],
                     iiif_manifest_url=iiif_manifest_url,
                     iiif_manifest_json=json.dumps({"manifest": f"{iiif_manifest_url}"}),
