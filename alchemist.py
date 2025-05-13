@@ -1216,10 +1216,10 @@ def main():
             logger.debug(f"🐞 LEN(FILEPATHS): {len(filepaths)}")
             if len(filepaths) > 1:
                 stage_2_path_obj = filepaths[0].parent
-                batch_directory = filepaths[0].parent.parent
+                batch_directory = filepaths[0].parent.parent.parent
             elif len(filepaths) == 1:
                 stage_2_path_obj = filepaths[0]
-                batch_directory = filepaths[0].parent
+                batch_directory = filepaths[0].parent.parent
             else:
                 logger.error("❌ UNEXPECTED FILEPATHS")
             cascflow.move_to_stage_3(stage_2_path_obj, batch_directory)
