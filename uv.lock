@@ -4,7 +4,7 @@ requires-python = ">=3.13"
 
 [[package]]
 name = "alchemist"
-version = "0.2.2"
+version = "0.2.4"
 source = { virtual = "." }
 dependencies = [
     { name = "cascflow" },
@@ -67,7 +67,7 @@ wheels = [
 [[package]]
 name = "cascflow"
 version = "0.4.2"
-source = { git = "https://github.com/t4k/cascflow?branch=main#ae6e85bf39e91236a59e0cd9964fa238d9810abc" }
+source = { git = "https://github.com/t4k/cascflow?branch=main#a41d35037eb027f6a91723d43e2510bb99805971" }
 dependencies = [
     { name = "archivessnake" },
     { name = "backoff" },
