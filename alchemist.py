@@ -1056,8 +1056,6 @@ def is_archival_object_eligible_for_publication(archival_object: dict, overwrite
             logger.error(message)
             return False
         elif digital_object_count == 1:
-            logger.debug(f"🐞 DIGITAL_OBJECT_RESOLVED_FILE_VERSIONS: {instance['digital_object']['_resolved'].get('file_versions')}")
-            logger.debug(f"🐞 OVERWRITE: {overwrite}")
             if instance["digital_object"]["_resolved"].get(
                 "file_versions"
             ) and not overwrite:
@@ -1108,7 +1106,6 @@ def validate_for_publication(validation_results: dict, overwrite: bool = False) 
     for entry in source_path.iterdir():
         ## validate the entry (file or directory)
         if (archival_object := cascflow.find_archival_object(entry.stem)):
-            logger.debug(f"🐞 OVERWRITE: {overwrite}")
             if is_archival_object_eligible_for_publication(archival_object, overwrite):
                 eligible_archival_objects.append(entry.stem)
             else:
@@ -1206,7 +1203,6 @@ def main():
     # handle the commands
     if args.command == "validate":
         validation_results = cascflow.validate(args.source_volume)
-        logger.debug(f"🐞 ARGS.OVERWRITE: {args.overwrite}")
         validate_for_publication(validation_results, overwrite=args.overwrite)
     elif args.command == "execute":
         build_directory = tempfile.TemporaryDirectory()
