@@ -298,6 +298,74 @@ LINKED_AGENT_ARCHIVAL_RECORD_RELATORS = {
 RIGHTS_NOTICE_HTML = '<p>These digitized collections are accessible for purposes of education and research. Due to the nature of archival collections, archivists at the Caltech Archives and Special Collections are not always able to identify copyright and rights of privacy, publicity, or trademark. We are eager to <a href="mailto:archives@caltech.edu">hear from any rights holders</a>, so that we may obtain accurate information. Upon request, we’ll remove material from public view while we address a rights issue.</p>'
 
 
+def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: dict) -> dict:
+    magick_identify = subprocess.run(
+        [
+            config("WORK_MAGICK_CMD"),
+            "identify",
+            "-format",
+            "%w*%h",
+            filepath.as_posix(),
+        ],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    dimensions = magick_identify.stdout.read().strip().split("*")
+    canvas_id = "/".join(
+        [
+            config("ALCHEMIST_BASE_URL").rstrip("/"),
+            config("ALCHEMIST_URL_PREFIX"),
+            arrangement["collection_id"],
+            archival_object["component_id"],
+            "canvas",
+            filepath.stem,
+        ]
+    )
+    escaped_identifier = "/".join(
+        [
+            config("ALCHEMIST_URL_PREFIX"),
+            arrangement["collection_id"],
+            archival_object["component_id"],
+            filepath.stem,
+        ]
+    )
+    service_id = "/".join(
+        [config("ALCHEMIST_IIIF_ENDPOINT").rstrip("/"), escaped_identifier]
+    )
+    resource_id = service_id + "/full/max/0/default.jpg"
+    # checking for the pattern like CollectionID_001_01_001, CollectionID_001_01_001r, or CollectionID_001_01_001v
+    components = filepath.stem.split("_")
+    if len(components) >= 3 and components[-1][:3].isdigit() and (len(components[-1]) == 3 or components[-1][3:] in {"r", "v"}):
+        canvas_label = components[-1].lstrip("0")
+    else:
+        canvas_label = filepath.stem
+    canvas = {
+        "@type": "sc:Canvas",
+        "@id": canvas_id,
+        "label": canvas_label,
+        "width": dimensions[0],
+        "height": dimensions[1],
+        "images": [
+            {
+                "@type": "oa:Annotation",
+                "motivation": "sc:painting",
+                "on": canvas_id,
+                "resource": {
+                    "@type": "dctypes:Image",
+                    "@id": resource_id,
+                    "service": {
+                        "@context": "http://iiif.io/api/image/2/context.json",
+                        "@id": service_id,
+                        "profile": "http://iiif.io/api/image/2/level2.json",
+                    },  # optional?
+                },
+            }
+        ],
+    }
+    return canvas
+
+
 def get_thumbnail_url(filepaths: list[Path], archival_object: dict, arrangement: dict) -> str:
     source_file = Path(sorted(filepaths)[0])
     if source_file.suffix == ".mp4":
@@ -770,7 +838,7 @@ def generate_archival_object_page(build_directory: tempfile, archival_object: di
         raise
 
 
-def generate_iiif_manifest(archival_object: dict, arrangement: dict, mimetype: str = "") -> None:
+def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict, mimetype: str) -> None:
     if mimetype == "video/mp4":
         # TODO use IIIF Presentation API 3.0; manifest.json files can supply video
         return
@@ -854,6 +922,62 @@ def generate_iiif_manifest(archival_object: dict, arrangement: dict, mimetype: s
                 # TODO validate against Restriction End date
                 attribution = note_contents
     # TODO add regenerate functionality
+    manifest = {
+        "@context": "http://iiif.io/api/presentation/2/context.json",
+        "@type": "sc:Manifest",
+        "@id": "/".join(
+            [
+                config("ALCHEMIST_BASE_URL").rstrip("/"),
+                config("ALCHEMIST_URL_PREFIX"),
+                arrangement["collection_id"],
+                archival_object["component_id"],
+                "manifest.json",
+            ]
+        ),
+    }
+    # maintain order of keys
+    manifest["label"] = archival_object["title"]
+    if description:
+        manifest["description"] = description
+    # TODO add regenerate functionality
+    manifest.update(
+        {
+            "thumbnail": {
+                "@id": get_thumbnail_url(filepaths, archival_object, arrangement),
+                "service": {
+                    "@context": "http://iiif.io/api/image/2/context.json",
+                    "@id": get_thumbnail_url(filepaths, archival_object, arrangement).rsplit("/", maxsplit=4)[0],
+                    "profile": "http://iiif.io/api/image/2/level1.json",
+                },
+            }
+        }
+    )
+    manifest["metadata"] = metadata
+    if attribution:
+        manifest["attribution"] = attribution
+    # TODO add regenerate functionality
+    manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
+    with ProcessPoolExecutor() as executor:
+        futures = [
+            executor.submit(create_canvas_metadata, filepath, archival_object, arrangement)
+            for filepath in sorted(filepaths)
+        ]
+        # maintain the order of the filepaths
+        for future in futures:
+            logger.debug(f"🐞 CANVAS: {future.result()}")
+            # add canvas to sequences
+            manifest["sequences"][0]["canvases"].append(future.result())
+    # save manifest file
+    manifest_file = Path(build_directory.name).joinpath(
+        config("ALCHEMIST_URL_PREFIX"),
+        arrangement["collection_id"],
+        archival_object["component_id"],
+        "manifest.json",
+    )
+    manifest_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest_file, "w") as f:
+        f.write(json.dumps(manifest, indent=4))
+    logger.info(f"✨ MANIFEST FILE GENERATED: {manifest_file}")
 
 
 def create_pyramid_tiff(build_directory: tempfile, filepath: Path, archival_object: dict, arrangement: dict) -> None:
@@ -1019,7 +1143,7 @@ def archival_object_level_processing(build_directory: tempfile, filepaths: list[
         if type == "video/mp4":
             mimetype = type
     generate_archival_object_page(build_directory, archival_object, arrangement, mimetype)
-    generate_iiif_manifest(archival_object, arrangement, mimetype)
+    generate_iiif_manifest(build_directory, filepaths, archival_object, arrangement, mimetype)
     loop_over_archival_object_files(build_directory, filepaths, archival_object, arrangement)
     logger.info(f'☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object["component_id"]}')
 
@@ -1213,7 +1337,6 @@ def main():
             publish_archival_object_access_files(build_directory, archival_object, arrangement)
             create_digital_object_file_versions(build_directory, filepaths, archival_object, arrangement)
             logger.debug(f"🐞 FILEPATHS: {filepaths}")
-            logger.debug(f"🐞 LEN(FILEPATHS): {len(filepaths)}")
             if len(filepaths) > 1:
                 stage_2_path_obj = filepaths[0].parent
                 batch_directory = filepaths[0].parent.parent.parent
