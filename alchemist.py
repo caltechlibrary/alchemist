@@ -1212,6 +1212,7 @@ def main():
             loop_over_archival_object_files(build_directory, filepaths, archival_object, arrangement)
             publish_archival_object_access_files(build_directory, archival_object, arrangement)
             create_digital_object_file_versions(build_directory, filepaths, archival_object, arrangement)
+            logger.debug(f"🐞 FILEPATHS: {filepaths}")
             if len(filepaths) > 1:
                 stage_2_path_obj = filepaths[0].parent
                 batch_directory = filepaths[0].parent.parent
