@@ -311,7 +311,7 @@ def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: d
         check=True,
         text=True,
     )
-    dimensions = magick_identify.stdout.read().strip().split("*")
+    dimensions = magick_identify.stdout.strip().split("*")
     canvas_id = "/".join(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
