@@ -298,7 +298,7 @@ LINKED_AGENT_ARCHIVAL_RECORD_RELATORS = {
 RIGHTS_NOTICE_HTML = '<p>These digitized collections are accessible for purposes of education and research. Due to the nature of archival collections, archivists at the Caltech Archives and Special Collections are not always able to identify copyright and rights of privacy, publicity, or trademark. We are eager to <a href="mailto:archives@caltech.edu">hear from any rights holders</a>, so that we may obtain accurate information. Upon request, we’ll remove material from public view while we address a rights issue.</p>'
 
 
-def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: dict) -> dict:
+def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: dict, sequence_indicators: dict) -> dict:
     magick_identify = subprocess.run(
         [
             config("WORK_MAGICK_CMD"),
@@ -334,10 +334,8 @@ def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: d
         [config("ALCHEMIST_IIIF_ENDPOINT").rstrip("/"), escaped_identifier]
     )
     resource_id = service_id + "/full/max/0/default.jpg"
-    # checking for the pattern like CollectionID_001_01_001, CollectionID_001_01_001r, or CollectionID_001_01_001v
-    components = filepath.stem.split("_")
-    if len(components) >= 3 and components[-1][:3].isdigit() and (len(components[-1]) == 3 or components[-1][3:] in {"r", "v"}):
-        canvas_label = components[-1].lstrip("0")
+    if sequence_indicators.get(archival_object["component_id"]):
+        canvas_label = filepath.stem.split("_")[-1].lstrip("0")
     else:
         canvas_label = filepath.stem
     canvas = {
@@ -957,9 +955,16 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
         manifest["attribution"] = attribution
     # TODO add regenerate functionality
     manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
+    if filepaths and len(filepaths) > 1:
+        sequence_indicators = {}
+        for filepath in filepaths:
+            if has_sequence_indicator(filepath.stem):
+                sequence_indicators.update({filepath.stem: True})
+            else:
+                sequence_indicators.update({filepath.stem: False})
     with ProcessPoolExecutor() as executor:
         futures = [
-            executor.submit(create_canvas_metadata, filepath, archival_object, arrangement)
+            executor.submit(create_canvas_metadata, filepath, archival_object, arrangement, sequence_indicators)
             for filepath in sorted(filepaths)
         ]
         # maintain the order of the filepaths
@@ -1148,6 +1153,17 @@ def archival_object_level_processing(build_directory: tempfile, filepaths: list[
     logger.info(f'☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object["component_id"]}')
 
 
+def has_sequence_indicator(filepath: str) -> bool:
+    # NOTE this is a very basic check; it will not catch all cases
+    # TODO add more robust checks for sequence indicators
+    # checking for the patterns like CollectionID_001_01_001, CollectionID_001_01_001r, or CollectionID_001_01_001v
+    components = filepath.stem.split("_")
+    if len(components) >= 3 and components[-1][:3].isdigit() and (len(components[-1]) == 3 or components[-1][3:] in {"r", "v"}):
+        return True
+    else:
+        return False
+
+
 def is_archival_object_eligible_for_publication(archival_object: dict, overwrite: bool = False) -> bool:
     if not archival_object["publish"]:
         message = "‼️ ARCHIVAL OBJECT NOT PUBLISHED: [**{}**]({}/resolve/readonly?uri={})".format(
@@ -1226,6 +1242,7 @@ def validate_for_publication(validation_results: dict, overwrite: bool = False) 
     empty_directories = validation_results.get("empty_directories", [])
     file_count = validation_results.get("file_count", 0)
     unsupported_files = []
+    sequence_indicators = {}
     ## iterate over the first level of entries in the source directory
     for entry in source_path.iterdir():
         ## validate the entry (file or directory)
@@ -1238,10 +1255,12 @@ def validate_for_publication(validation_results: dict, overwrite: bool = False) 
             ## check for file types that are unsupported in publication
             if not is_publication_file_supported(entry):
                 unsupported_files.append(entry)
-        ## ensure directories do not contain subdirectories
         if entry.is_dir():
+            sequence_indicators.update({entry.stem: True})
             for child in entry.iterdir():
                 if child.is_file():
+                    if not has_sequence_indicator(child.stem):
+                        sequence_indicators.update({entry.stem: False})
                     ## check for file types that are unsupported in publication
                     if not is_publication_file_supported(child):
                         unsupported_files.append(child)
@@ -1249,6 +1268,10 @@ def validate_for_publication(validation_results: dict, overwrite: bool = False) 
     if eligible_archival_objects:
         for eligible_archival_object in eligible_archival_objects:
             logger.info(f"🉑 {eligible_archival_object}")
+            if sequence_indicators.get(eligible_archival_object):
+                logger.info("🔢 CANVAS LABELS WILL USE SEQUENTIAL INDICATORS")
+            else:
+                logger.info("📁 CANVAS LABELS WILL USE FILENAME STEMS")
         logger.info(f"🗂 ARCHIVAL OBJECT COUNT: {len(eligible_archival_objects)}")
         logger.info(f"📄 FILE COUNT: {file_count}")
     ## validation and messaging
@@ -1333,7 +1356,6 @@ def main():
         for filepaths, archival_object, arrangement in cascflow.execute(args.source_volume, args.batch_set_id, pipeline="publication"):
             # process each result as it is yielded
             archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
-            loop_over_archival_object_files(build_directory, filepaths, archival_object, arrangement)
             publish_archival_object_access_files(build_directory, archival_object, arrangement)
             create_digital_object_file_versions(build_directory, filepaths, archival_object, arrangement)
             logger.debug(f"🐞 FILEPATHS: {filepaths}")
