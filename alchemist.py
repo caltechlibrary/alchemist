@@ -1411,6 +1411,7 @@ def main():
                             config("ALCHEMIST_URL_PREFIX"),
                             arrangement["collection_id"],
                             archival_object["component_id"],
+                            "*",  ## end with a wildcard
                         ]
                     )
                 )
