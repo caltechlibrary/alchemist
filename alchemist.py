@@ -1153,7 +1153,7 @@ def archival_object_level_processing(build_directory: tempfile, filepaths: list[
     logger.info(f'☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object["component_id"]}')
 
 
-def has_sequence_indicator(filepath: str) -> bool:
+def has_sequence_indicator(filepath: Path) -> bool:
     # NOTE this is a very basic check; it will not catch all cases
     # TODO add more robust checks for sequence indicators
     # checking for the patterns like CollectionID_001_01_001, CollectionID_001_01_001r, or CollectionID_001_01_001v
