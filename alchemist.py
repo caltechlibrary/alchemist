@@ -992,9 +992,9 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
         sequence_indicators = {}
         for filepath in filepaths:
             if has_sequence_indicator(filepath.stem):
-                sequence_indicators.update({filepath.stem: True})
+                sequence_indicators.update({archival_object["component_id"]: True})
             else:
-                sequence_indicators.update({filepath.stem: False})
+                sequence_indicators.update({archival_object["component_id"]: False})
     logger.debug(f"🐞 SEQUENCE_INDICATORS: {sequence_indicators}")
     with ProcessPoolExecutor() as executor:
         futures = [
