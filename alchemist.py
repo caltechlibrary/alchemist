@@ -366,6 +366,7 @@ def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: d
         [config("ALCHEMIST_IIIF_ENDPOINT").rstrip("/"), escaped_identifier]
     )
     resource_id = service_id + "/full/max/0/default.jpg"
+    logger.debug(f"🐞 SEQUENCE_INDICATORS: {sequence_indicators}")
     if sequence_indicators.get(archival_object["component_id"]):
         canvas_label = filepath.stem.split("_")[-1].lstrip("0")
     else:
@@ -994,6 +995,7 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
                 sequence_indicators.update({filepath.stem: True})
             else:
                 sequence_indicators.update({filepath.stem: False})
+    logger.debug(f"🐞 SEQUENCE_INDICATORS: {sequence_indicators}")
     with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(create_canvas_metadata, filepath, archival_object, arrangement, sequence_indicators)
