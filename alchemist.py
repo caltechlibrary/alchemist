@@ -8,10 +8,12 @@ import mimetypes
 import shutil
 import subprocess
 import tempfile
+import time
 
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import boto3  # pypi: boto3
 import jinja2  # pypi: Jinja2
 
 from decouple import config  # pypi: python-decouple
@@ -296,6 +298,36 @@ LINKED_AGENT_ARCHIVAL_RECORD_RELATORS = {
 }
 
 RIGHTS_NOTICE_HTML = '<p>These digitized collections are accessible for purposes of education and research. Due to the nature of archival collections, archivists at the Caltech Archives and Special Collections are not always able to identify copyright and rights of privacy, publicity, or trademark. We are eager to <a href="mailto:archives@caltech.edu">hear from any rights holders</a>, so that we may obtain accurate information. Upon request, we’ll remove material from public view while we address a rights issue.</p>'
+
+
+def invalidate_cloudfront_paths(paths=None, caller_reference=None):
+    if not caller_reference:
+        caller_reference = str(time.time())
+    cloudfront_client = boto3.client(
+        "cloudfront",
+        aws_access_key_id=config("DISTILLERY_AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=config("DISTILLERY_AWS_SECRET_ACCESS_KEY"),
+    )
+    if paths is None:
+        paths = ["/*"]
+    quantity = len(paths)
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/cloudfront/client/create_invalidation.html
+    response = cloudfront_client.create_invalidation(
+        DistributionId=config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID"),
+        InvalidationBatch={
+            "Paths": {"Quantity": quantity, "Items": paths},
+            "CallerReference": caller_reference,
+        },
+    )
+    logger.debug(f"🐞 CLOUDFRONT INVALIDATION RESPONSE: {str(response)}")
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/cloudfront/waiter/InvalidationCompleted.html
+    waiter = cloudfront_client.get_waiter("invalidation_completed")
+    logger.debug("🐞 WAITING ON CLOUDFRONT INVALIDATION")
+    waiter.wait(
+        DistributionId=config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID"),
+        Id=response["Invalidation"]["Id"],
+    )
+    logger.debug("🐞 CLOUDFRONT INVALIDATION COMPLETE")
 
 
 def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: dict, sequence_indicators: dict) -> dict:
@@ -1330,6 +1362,9 @@ def main():
     execute_parser.add_argument(
         "--batch-set-id", required=True, help="Batch set ID for processing."
     )
+    execute_parser.add_argument(
+        "--overwrite", action="store_true", help="Boolean. Overwrite existing Digital Objects."
+    )
 
     # subcommand: regenerate
     regenerate_parser = subparsers.add_parser(
@@ -1353,6 +1388,7 @@ def main():
         validate_for_publication(validation_results, overwrite=args.overwrite)
     elif args.command == "execute":
         build_directory = tempfile.TemporaryDirectory()
+        cloudfront_invalidation_batch = []
         for filepaths, archival_object, arrangement in cascflow.execute(args.source_volume, args.batch_set_id, pipeline="publication"):
             # process each result as it is yielded
             archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
@@ -1368,6 +1404,21 @@ def main():
             else:
                 logger.error("❌ UNEXPECTED FILEPATHS")
             cascflow.move_to_stage_3(stage_2_path_obj, batch_directory)
+            if args.overwrite:
+                ## construct the path for cloudfront invalidation
+                cloudfront_invalidation_batch.append(
+                    "/".join(
+                        [
+                            "",  ## start with a leading slash
+                            config("ALCHEMIST_URL_PREFIX"),
+                            arrangement["collection_id"],
+                            archival_object["component_id"],
+                        ]
+                    )
+                )
+        if args.overwrite and cloudfront_invalidation_batch:
+            invalidate_cloudfront_paths(paths=cloudfront_invalidation_batch)
+
     # elif args.command == "regenerate":
     #     alchemist_regenerate(
     #         component_id=args.component_id,
