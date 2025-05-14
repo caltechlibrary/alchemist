@@ -305,8 +305,8 @@ def invalidate_cloudfront_paths(paths=None, caller_reference=None):
         caller_reference = str(time.time())
     cloudfront_client = boto3.client(
         "cloudfront",
-        aws_access_key_id=config("DISTILLERY_AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=config("DISTILLERY_AWS_SECRET_ACCESS_KEY"),
+        aws_access_key_id=config("ALCHEMIST_AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=config("ALCHEMIST_AWS_SECRET_ACCESS_KEY"),
     )
     if paths is None:
         paths = ["/*"]
