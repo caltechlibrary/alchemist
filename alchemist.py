@@ -366,7 +366,6 @@ def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: d
         [config("ALCHEMIST_IIIF_ENDPOINT").rstrip("/"), escaped_identifier]
     )
     resource_id = service_id + "/full/max/0/default.jpg"
-    logger.debug(f"🐞 SEQUENCE_INDICATORS: {sequence_indicators}")
     if sequence_indicators.get(archival_object["component_id"]):
         canvas_label = filepath.stem.split("_")[-1].lstrip("0")
     else:
@@ -989,13 +988,10 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
     # TODO add regenerate functionality
     manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
     if filepaths and len(filepaths) > 1:
-        sequence_indicators = {}
+        sequence_indicators = {archival_object["component_id"]: True}
         for filepath in filepaths:
-            if has_sequence_indicator(filepath.stem):
-                sequence_indicators.update({archival_object["component_id"]: True})
-            else:
+            if not has_sequence_indicator(filepath.stem):
                 sequence_indicators.update({archival_object["component_id"]: False})
-    logger.debug(f"🐞 SEQUENCE_INDICATORS: {sequence_indicators}")
     with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(create_canvas_metadata, filepath, archival_object, arrangement, sequence_indicators)
