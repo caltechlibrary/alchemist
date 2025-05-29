@@ -1264,7 +1264,7 @@ def is_publication_file_supported(entry: Path) -> bool:
         return False
 
 
-def validate_for_publication(validation_results: dict, overwrite: bool = False) -> None:
+def validate_digital_files_for_publication(validation_results: dict, overwrite: bool = False) -> None:
     source_path = Path(validation_results.get("source_path"))
     eligible_archival_objects = []
     ineligible_archival_objects = []
@@ -1346,10 +1346,10 @@ def main():
         "validate", help="Validate connections, files, and data."
     )
     validate_parser.add_argument(
-        "--source-volume", required=True, help="String. Name of source volume."
+        "--target", required=True, choices=["publication", "metadata", "files"], help="String. Target for validation. Limited choices."
     )
     validate_parser.add_argument(
-        "--overwrite", action="store_true", help="Boolean. Overwrite existing Digital Objects."
+        "--context", required=True, help="String. Supply a volume name or an identifier, depending on the target."
     )
 
     # subcommand: execute
@@ -1360,30 +1360,16 @@ def main():
     execute_parser.add_argument(
         "--batch-set-id", required=True, help="Batch set ID for processing."
     )
-    execute_parser.add_argument(
-        "--overwrite", action="store_true", help="Boolean. Overwrite existing Digital Objects."
-    )
-
-    # subcommand: regenerate
-    regenerate_parser = subparsers.add_parser(
-        "regenerate", help="Regenerate files for a component, collection, or all items."
-    )
-    regenerate_parser.add_argument(
-        "--component-id", help="Component ID for regeneration."
-    )
-    regenerate_parser.add_argument(
-        "--collection-id", help="Collection ID for regeneration."
-    )
-    regenerate_parser.add_argument(
-        "--logfile", required=True, help="Path to the logfile."
-    )
 
     args = parser.parse_args()
 
     # handle the commands
     if args.command == "validate":
-        validation_results = cascflow.validate(args.source_volume)
-        validate_for_publication(validation_results, overwrite=args.overwrite)
+        if args.target == "metadata":
+            cascflow.validate_metadata_identifier(args.context)
+        else:
+            validation_results = cascflow.validate_digital_files(args.context)
+            validate_digital_files_for_publication(validation_results)
     elif args.command == "execute":
         build_directory = tempfile.TemporaryDirectory()
         cloudfront_invalidation_batch = []
