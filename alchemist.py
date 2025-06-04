@@ -868,6 +868,7 @@ def generate_archival_object_page(build_directory: tempfile, archival_object: di
         raise
 
 
+@cascflow.ensure_s3_connection
 def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict, mimetype: str) -> None:
     if mimetype == "video/mp4":
         # TODO use IIIF Presentation API 3.0; manifest.json files can supply video
