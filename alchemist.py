@@ -1356,10 +1356,10 @@ def main():
     # subcommand: execute
     execute_parser = subparsers.add_parser("execute", help="Execute the publication process.")
     execute_parser.add_argument(
-        "--source-volume", required=True, help="String. Name of source volume."
+        "--target", required=True, choices=["publication", "metadata", "files"], help="String. Target for validation. Limited choices."
     )
     execute_parser.add_argument(
-        "--batch-set-id", required=True, help="Batch set ID for processing."
+        "--context", required=True, help="String. Supply a volume name or an identifier, depending on the target."
     )
 
     args = parser.parse_args()
