@@ -1367,7 +1367,7 @@ def main():
     # handle the commands
     if args.command == "validate":
         if args.target == "metadata":
-            cascflow.validate_metadata_identifier(args.context)
+            cascflow.parse_metadata_identifier(args.context)
         else:
             validation_results = cascflow.validate_digital_files(args.context)
             validate_digital_files_for_publication(validation_results)
