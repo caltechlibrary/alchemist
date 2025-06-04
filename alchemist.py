@@ -2,6 +2,7 @@
 # RENDER AND PUBLISH ACCESS PAGES AND ASSETS
 
 import argparse
+import datetime
 import json
 import logging
 import mimetypes
@@ -520,8 +521,6 @@ def create_digital_object_file_versions(build_directory: tempfile, filepaths: li
 
 
 def publish_archival_object_access_files(build_directory: tempfile, archival_object: dict, arrangement: dict) -> None:
-    # NOTE working on archival_object["component_id"]
-
     archival_object_access_path = "/".join(
         [
             config("ALCHEMIST_URL_PREFIX"),
@@ -529,35 +528,11 @@ def publish_archival_object_access_files(build_directory: tempfile, archival_obj
             archival_object["component_id"],
         ]
     )
-
-    # TODO think about how to DRY this out;
-    # we need one version with a --delete flag and one without
-    # if variables.get("alchemist_regenerate"):
-    #     try:
-    #         s5cmd_cmd = sh.Command(config("WORK_S5CMD_CMD"))
-    #         sync = s5cmd_cmd(
-    #             "sync",
-    #             f"{build_directory.name}/{archival_object_access_path}/*",
-    #             f's3://{config("ALCHEMIST_BUCKET")}/{archival_object_access_path}/',
-    #             _env={
-    #                 "AWS_ACCESS_KEY_ID": config("DISTILLERY_AWS_ACCESS_KEY_ID"),
-    #                 "AWS_SECRET_ACCESS_KEY": config("DISTILLERY_AWS_SECRET_ACCESS_KEY"),
-    #             },
-    #             _out=sync_output,
-    #             _err=sync_output,
-    #             _bg=True,
-    #         )
-    #         sync.wait()
-    #     except:
-    #         logger.exception("‼️")
-    #         raise
-    # else:
     try:
         s5cmd_sync = subprocess.run(
             [
                 config("WORK_S5CMD_CMD"),
                 "sync",
-                "--delete",
                 f"{build_directory.name}/{archival_object_access_path}/*",
                 f's3://{config("ALCHEMIST_BUCKET")}/{archival_object_access_path}/',
             ],
@@ -952,57 +927,74 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
                 # TODO check for note upwards in the hierarchy
                 # TODO validate against Restriction End date
                 attribution = note_contents
-    # TODO add regenerate functionality
-    manifest = {
-        "@context": "http://iiif.io/api/presentation/2/context.json",
-        "@type": "sc:Manifest",
-        "@id": "/".join(
-            [
-                config("ALCHEMIST_BASE_URL").rstrip("/"),
-                config("ALCHEMIST_URL_PREFIX"),
+    # Use an existing manifiest file if we are only updating metadata and have no filepaths.
+    if not filepaths:
+        manifest_key = (
+            Path(config("ALCHEMIST_URL_PREFIX"))
+            .joinpath(
                 arrangement["collection_id"],
                 archival_object["component_id"],
                 "manifest.json",
-            ]
-        ),
-    }
+            )
+            .as_posix()
+        )
+        response = cascflow.s3_client.get_object(
+            Bucket=config("ALCHEMIST_BUCKET"), Key=manifest_key
+        )
+        manifest = json.loads(response["Body"].read())
+    else:
+        manifest = {
+            "@context": "http://iiif.io/api/presentation/2/context.json",
+            "@type": "sc:Manifest",
+            "@id": "/".join(
+                [
+                    config("ALCHEMIST_BASE_URL").rstrip("/"),
+                    config("ALCHEMIST_URL_PREFIX"),
+                    arrangement["collection_id"],
+                    archival_object["component_id"],
+                    "manifest.json",
+                ]
+            ),
+        }
     # maintain order of keys
     manifest["label"] = archival_object["title"]
     if description:
         manifest["description"] = description
-    # TODO add regenerate functionality
-    manifest.update(
-        {
-            "thumbnail": {
-                "@id": get_thumbnail_url(filepaths, archival_object, arrangement),
-                "service": {
-                    "@context": "http://iiif.io/api/image/2/context.json",
-                    "@id": get_thumbnail_url(filepaths, archival_object, arrangement).rsplit("/", maxsplit=4)[0],
-                    "profile": "http://iiif.io/api/image/2/level1.json",
-                },
+    # Update thumbnail if we have filepaths.
+    if filepaths:
+        manifest.update(
+            {
+                "thumbnail": {
+                    "@id": get_thumbnail_url(filepaths, archival_object, arrangement),
+                    "service": {
+                        "@context": "http://iiif.io/api/image/2/context.json",
+                        "@id": get_thumbnail_url(filepaths, archival_object, arrangement).rsplit("/", maxsplit=4)[0],
+                        "profile": "http://iiif.io/api/image/2/level1.json",
+                    },
+                }
             }
-        }
-    )
+        )
     manifest["metadata"] = metadata
     if attribution:
         manifest["attribution"] = attribution
-    # TODO add regenerate functionality
-    manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
-    if filepaths and len(filepaths) > 1:
-        sequence_indicators = {archival_object["component_id"]: True}
-        for filepath in filepaths:
-            if not has_sequence_indicator(filepath.stem):
-                sequence_indicators.update({archival_object["component_id"]: False})
-    with ProcessPoolExecutor() as executor:
-        futures = [
-            executor.submit(create_canvas_metadata, filepath, archival_object, arrangement, sequence_indicators)
-            for filepath in sorted(filepaths)
-        ]
-        # maintain the order of the filepaths
-        for future in futures:
-            logger.debug(f"🐞 CANVAS: {future.result()}")
-            # add canvas to sequences
-            manifest["sequences"][0]["canvases"].append(future.result())
+    # Update sequence indicators and canvas metadata if we have filepaths.
+    if filepaths:
+        manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
+        if filepaths and len(filepaths) > 1:
+            sequence_indicators = {archival_object["component_id"]: True}
+            for filepath in filepaths:
+                if not has_sequence_indicator(filepath.stem):
+                    sequence_indicators.update({archival_object["component_id"]: False})
+        with ProcessPoolExecutor() as executor:
+            futures = [
+                executor.submit(create_canvas_metadata, filepath, archival_object, arrangement, sequence_indicators)
+                for filepath in sorted(filepaths)
+            ]
+            # maintain the order of the filepaths
+            for future in futures:
+                logger.debug(f"🐞 CANVAS: {future.result()}")
+                # add canvas to sequences
+                manifest["sequences"][0]["canvases"].append(future.result())
     # save manifest file
     manifest_file = Path(build_directory.name).joinpath(
         config("ALCHEMIST_URL_PREFIX"),
@@ -1179,9 +1171,11 @@ def archival_object_level_processing(build_directory: tempfile, filepaths: list[
         if type == "video/mp4":
             mimetype = type
     generate_archival_object_page(build_directory, archival_object, arrangement, mimetype)
+    # `filepaths`` is set to [] if we are only updating metadata.
     generate_iiif_manifest(build_directory, filepaths, archival_object, arrangement, mimetype)
-    loop_over_archival_object_files(build_directory, filepaths, archival_object, arrangement)
-    logger.info(f'☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object["component_id"]}')
+    if filepaths:
+        loop_over_archival_object_files(build_directory, filepaths, archival_object, arrangement)
+        logger.info(f'☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object["component_id"]}')
 
 
 def has_sequence_indicator(stem: str) -> bool:
@@ -1373,44 +1367,58 @@ def main():
             validate_digital_files_for_publication(validation_results)
     elif args.command == "execute":
         build_directory = tempfile.TemporaryDirectory()
-        cloudfront_invalidation_batch = []
-        for filepaths, archival_object, arrangement in cascflow.execute(args.source_volume, args.batch_set_id, pipeline="publication"):
-            # process each result as it is yielded
-            archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
-            publish_archival_object_access_files(build_directory, archival_object, arrangement)
-            create_digital_object_file_versions(build_directory, filepaths, archival_object, arrangement)
-            logger.debug(f"🐞 FILEPATHS: {filepaths}")
-            if len(filepaths) > 1:
-                stage_2_path_obj = filepaths[0].parent
-                batch_directory = filepaths[0].parent.parent.parent
-            elif len(filepaths) == 1:
-                stage_2_path_obj = filepaths[0]
-                batch_directory = filepaths[0].parent.parent
+        if args.target == "metadata":
+            # The context is an identifier string.
+            parse_results = cascflow.parse_metadata_identifier(args.context)
+            for eligible_archival_object in parse_results.get("eligible_archival_objects", []):
+                archival_object = cascflow.find_archival_object(eligible_archival_object)
+                arrangement = cascflow.get_arrangement(archival_object)
+                filepaths = []
+                archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
+                publish_archival_object_access_files(build_directory, archival_object, arrangement)
+            if parse_results.get("identifier_level") == "resource":
+                if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
+                    # Invalidate everything under the resource path component.
+                    invalidate_cloudfront_paths(paths=[f'/{config("ALCHEMIST_URL_PREFIX")}/{args.context}/*'])
             else:
-                logger.error("❌ UNEXPECTED FILEPATHS")
-            cascflow.move_to_stage_3(stage_2_path_obj, batch_directory)
-            if args.overwrite:
-                ## construct the path for cloudfront invalidation
-                cloudfront_invalidation_batch.append(
-                    "/".join(
-                        [
-                            "",  ## start with a leading slash
-                            config("ALCHEMIST_URL_PREFIX"),
-                            arrangement["collection_id"],
-                            archival_object["component_id"],
-                            "*",  ## end with a wildcard
-                        ]
+                if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
+                    # We should only have a single archival object.
+                    invalidate_cloudfront_paths(paths=[f'/{config("ALCHEMIST_URL_PREFIX")}/{arrangement["collection_id"]}/{args.context}/*'])
+        else:
+            # Our target is either "publication" or "files". The context is the volume name.
+            batch_set_id = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+            cloudfront_invalidation_batch = []
+            for filepaths, archival_object, arrangement in cascflow.execute(args.context, batch_set_id):
+                # process each result as it is yielded
+                archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
+                publish_archival_object_access_files(build_directory, archival_object, arrangement)
+                create_digital_object_file_versions(build_directory, filepaths, archival_object, arrangement)
+                # Sometimes filepaths will be individual files, sometimes directories.
+                logger.debug(f"🐞 FILEPATHS: {filepaths}")
+                if len(filepaths) > 1:
+                    stage_2_path_obj = filepaths[0].parent
+                    batch_directory = filepaths[0].parent.parent.parent
+                elif len(filepaths) == 1:
+                    stage_2_path_obj = filepaths[0]
+                    batch_directory = filepaths[0].parent.parent
+                else:
+                    logger.error("❌ UNEXPECTED FILEPATHS")
+                cascflow.move_to_stage_3(stage_2_path_obj, batch_directory)
+                if args.target == "files":
+                    # Invalidate the paths for the updated files.
+                    cloudfront_invalidation_batch.append(
+                        "/".join(
+                            [
+                                "",  ## start with a leading slash
+                                config("ALCHEMIST_URL_PREFIX"),
+                                arrangement["collection_id"],
+                                archival_object["component_id"],
+                                "*",  ## end with a wildcard
+                            ]
+                        )
                     )
-                )
-        if args.overwrite and cloudfront_invalidation_batch:
-            invalidate_cloudfront_paths(paths=cloudfront_invalidation_batch)
-
-    # elif args.command == "regenerate":
-    #     alchemist_regenerate(
-    #         component_id=args.component_id,
-    #         collection_id=args.collection_id,
-    #         logfile=args.logfile,
-    #     )
+            if args.target == "files" and cloudfront_invalidation_batch:
+                invalidate_cloudfront_paths(paths=cloudfront_invalidation_batch)
     else:
         parser.print_help()
 
