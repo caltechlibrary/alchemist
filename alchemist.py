@@ -978,13 +978,12 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
     if attribution:
         manifest["attribution"] = attribution
     # Update sequence indicators and canvas metadata if we have filepaths.
-    if filepaths:
+    if filepaths and len(filepaths) > 1:
         manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
-        if filepaths and len(filepaths) > 1:
-            sequence_indicators = {archival_object["component_id"]: True}
-            for filepath in filepaths:
-                if not has_sequence_indicator(filepath.stem):
-                    sequence_indicators.update({archival_object["component_id"]: False})
+        sequence_indicators = {archival_object["component_id"]: True}
+        for filepath in filepaths:
+            if not has_sequence_indicator(filepath.stem):
+                sequence_indicators.update({archival_object["component_id"]: False})
         with ProcessPoolExecutor() as executor:
             futures = [
                 executor.submit(create_canvas_metadata, filepath, archival_object, arrangement, sequence_indicators)
