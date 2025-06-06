@@ -1387,7 +1387,7 @@ def main():
             # Our target is either "publication" or "files". The context is the volume name.
             batch_set_id = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
             cloudfront_invalidation_batch = []
-            for filepaths, archival_object, arrangement in cascflow.execute(args.context, batch_set_id):
+            for filepaths, archival_object, arrangement in cascflow.execute(args.context, batch_set_id, args.target):
                 # process each result as it is yielded
                 archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
                 publish_archival_object_access_files(build_directory, archival_object, arrangement)

@@ -15,7 +15,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", specifier = ">=1.38.29" },
+    { name = "boto3", specifier = ">=1.38.32" },
     { name = "cascflow", git = "https://github.com/t4k/cascflow?branch=main" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "python-decouple", specifier = ">=3.8" },
@@ -96,8 +96,8 @@ wheels = [
 
 [[package]]
 name = "cascflow"
-version = "0.6.0"
-source = { git = "https://github.com/t4k/cascflow?branch=main#8a3ee123ebf625a2d7b279ce7f5906af76e7c528" }
+version = "0.7.0"
+source = { git = "https://github.com/t4k/cascflow?branch=main#391dddb8b2f4acf3f1005d07108d7720287e2199" }
 dependencies = [
     { name = "archivessnake" },
     { name = "backoff" },
