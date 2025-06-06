@@ -1220,7 +1220,6 @@ def is_archival_object_eligible_for_publication(archival_object: dict, pipeline:
             logger.error(message)
             return False
         elif digital_object_count == 1:
-            logger.debug(f"🐞 PIPELINE: {pipeline}")
             if instance["digital_object"]["_resolved"].get("file_versions") and pipeline == "publication":
                 message = "‼️ DIGITAL OBJECT ALREADY HAS FILE VERSIONS: [**{}**]({}/resolve/readonly?uri={})".format(
                     instance["digital_object"]["_resolved"]["title"],
@@ -1270,7 +1269,6 @@ def validate_digital_files_for_publication(validation_results: dict, pipeline: s
     for entry in source_path.iterdir():
         ## validate the entry (file or directory)
         if (archival_object := cascflow.find_archival_object(entry.stem)):
-            logger.debug(f"🐞 PIPELINE: {pipeline}")
             if is_archival_object_eligible_for_publication(archival_object, pipeline):
                 eligible_archival_objects.append(entry.stem)
             else:
@@ -1358,8 +1356,8 @@ def main():
     args = parser.parse_args()
 
     # handle the commands
+    logger.debug(f"🐞 TARGET: {args.target}")
     if args.command == "validate":
-        logger.debug(f"🐞 TARGET: {args.target}")
         if args.target == "metadata":
             cascflow.parse_metadata_identifier(args.context)
         else:
