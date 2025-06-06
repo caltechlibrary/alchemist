@@ -1188,7 +1188,7 @@ def has_sequence_indicator(stem: str) -> bool:
         return False
 
 
-def is_archival_object_eligible_for_publication(archival_object: dict, overwrite: bool = False) -> bool:
+def is_archival_object_eligible_for_publication(archival_object: dict, pipeline: str) -> bool:
     if not archival_object["publish"]:
         message = "‼️ ARCHIVAL OBJECT NOT PUBLISHED: [**{}**]({}/resolve/readonly?uri={})".format(
             archival_object["title"],
@@ -1220,9 +1220,7 @@ def is_archival_object_eligible_for_publication(archival_object: dict, overwrite
             logger.error(message)
             return False
         elif digital_object_count == 1:
-            if instance["digital_object"]["_resolved"].get(
-                "file_versions"
-            ) and not overwrite:
+            if instance["digital_object"]["_resolved"].get("file_versions") and pipeline == "publication":
                 message = "‼️ DIGITAL OBJECT ALREADY HAS FILE VERSIONS: [**{}**]({}/resolve/readonly?uri={})".format(
                     instance["digital_object"]["_resolved"]["title"],
                     config("ARCHIVESSPACE_STAFF_URL"),
@@ -1258,7 +1256,7 @@ def is_publication_file_supported(entry: Path) -> bool:
         return False
 
 
-def validate_digital_files_for_publication(validation_results: dict, overwrite: bool = False) -> None:
+def validate_digital_files_for_publication(validation_results: dict, pipeline: str) -> None:
     source_path = Path(validation_results.get("source_path"))
     eligible_archival_objects = []
     ineligible_archival_objects = []
@@ -1271,7 +1269,7 @@ def validate_digital_files_for_publication(validation_results: dict, overwrite: 
     for entry in source_path.iterdir():
         ## validate the entry (file or directory)
         if (archival_object := cascflow.find_archival_object(entry.stem)):
-            if is_archival_object_eligible_for_publication(archival_object, overwrite):
+            if is_archival_object_eligible_for_publication(archival_object, pipeline):
                 eligible_archival_objects.append(entry.stem)
             else:
                 ineligible_archival_objects.append(entry.stem)
@@ -1363,7 +1361,7 @@ def main():
             cascflow.parse_metadata_identifier(args.context)
         else:
             validation_results = cascflow.validate_digital_files(args.context)
-            validate_digital_files_for_publication(validation_results)
+            validate_digital_files_for_publication(validation_results, args.target)
     elif args.command == "execute":
         build_directory = tempfile.TemporaryDirectory()
         if args.target == "metadata":
