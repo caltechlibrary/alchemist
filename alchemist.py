@@ -843,7 +843,6 @@ def generate_archival_object_page(build_directory: tempfile, archival_object: di
         raise
 
 
-@cascflow.ensure_s3_connection
 def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict, mimetype: str) -> None:
     if mimetype == "video/mp4":
         # TODO use IIIF Presentation API 3.0; manifest.json files can supply video
@@ -938,9 +937,7 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
             )
             .as_posix()
         )
-        response = cascflow.s3_client.get_object(
-            Bucket=config("ALCHEMIST_BUCKET"), Key=manifest_key
-        )
+        response = cascflow.s3_get_object(config("ALCHEMIST_BUCKET"), manifest_key)
         manifest = json.loads(response["Body"].read())
     else:
         manifest = {
