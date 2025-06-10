@@ -1383,21 +1383,11 @@ def main():
             # Our target is either "publication" or "files". The context is the volume name.
             batch_set_id = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
             cloudfront_invalidation_batch = []
-            for filepaths, archival_object, arrangement in cascflow.execute(args.context, batch_set_id, args.target):
+            for batch_directory, stage_2_path_obj, filepaths, archival_object, arrangement in cascflow.execute(args.context, batch_set_id, args.target):
                 # process each result as it is yielded
                 archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
                 publish_archival_object_access_files(build_directory, archival_object, arrangement)
                 create_digital_object_file_versions(build_directory, filepaths, archival_object, arrangement)
-                # Sometimes filepaths will be individual files, sometimes directories.
-                logger.debug(f"🐞 FILEPATHS: {filepaths}")
-                if len(filepaths) > 1:
-                    stage_2_path_obj = filepaths[0].parent
-                    batch_directory = filepaths[0].parent.parent.parent
-                elif len(filepaths) == 1:
-                    stage_2_path_obj = filepaths[0]
-                    batch_directory = filepaths[0].parent.parent
-                else:
-                    logger.error("❌ UNEXPECTED FILEPATHS")
                 cascflow.move_to_stage_3(stage_2_path_obj, batch_directory)
                 if args.target == "files":
                     # Invalidate the paths for the updated files.
