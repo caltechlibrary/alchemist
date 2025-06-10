@@ -21,8 +21,8 @@ from decouple import config  # pypi: python-decouple
 
 import cascflow
 
-cascflow.setup_logging('settings.ini')
-logger = logging.getLogger('alchemist')
+cascflow.setup_logging("settings.ini")
+logger = logging.getLogger("alchemist")
 
 LINKED_AGENT_ARCHIVAL_RECORD_RELATORS = {
     "abr": "Abridger",
@@ -331,7 +331,9 @@ def invalidate_cloudfront_paths(paths=None, caller_reference=None):
     logger.debug("🐞 CLOUDFRONT INVALIDATION COMPLETE")
 
 
-def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: dict, sequence_indicators: dict) -> dict:
+def create_canvas_metadata(
+    filepath: Path, archival_object: dict, arrangement: dict, sequence_indicators: dict
+) -> dict:
     magick_identify = subprocess.run(
         [
             config("WORK_MAGICK_CMD"),
@@ -397,7 +399,9 @@ def create_canvas_metadata(filepath: Path, archival_object: dict, arrangement: d
     return canvas
 
 
-def get_thumbnail_url(filepaths: list[Path], archival_object: dict, arrangement: dict) -> str:
+def get_thumbnail_url(
+    filepaths: list[Path], archival_object: dict, arrangement: dict
+) -> str:
     source_file = Path(sorted(filepaths)[0])
     if source_file.suffix == ".mp4":
         return "/".join(
@@ -431,7 +435,12 @@ def get_thumbnail_url(filepaths: list[Path], archival_object: dict, arrangement:
     )
 
 
-def create_digital_object_file_versions(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict) -> None:
+def create_digital_object_file_versions(
+    build_directory: tempfile,
+    filepaths: list[Path],
+    archival_object: dict,
+    arrangement: dict,
+) -> None:
     logger.debug(f'🐞 ARCHIVAL_OBJECT: {archival_object["component_id"]}')
     logger.debug(f"🐞 BUILD_DIRECTORY: {build_directory}")
 
@@ -461,7 +470,7 @@ def create_digital_object_file_versions(build_directory: tempfile, filepaths: li
         for f in archival_object_directory.iterdir()
         if f.is_file() and (f.name.endswith(".ptif") or f.name.endswith(".mp4"))
     ]
-    logger.debug(f'🐞 FILEPATHS[0]: {sorted(filepaths)[0]}')
+    logger.debug(f"🐞 FILEPATHS[0]: {sorted(filepaths)[0]}")
 
     if filepaths[0].name.endswith(".ptif"):
         digital_object_type = "still_image"
@@ -492,11 +501,7 @@ def create_digital_object_file_versions(build_directory: tempfile, filepaths: li
     ]
 
     digital_object_count = len(
-        [
-            i
-            for i in archival_object["instances"]
-            if "digital_object" in i.keys()
-        ]
+        [i for i in archival_object["instances"] if "digital_object" in i.keys()]
     )
     logger.debug(f"🐞 DIGITAL OBJECT COUNT: {digital_object_count}")
     if digital_object_count > 1:
@@ -504,9 +509,7 @@ def create_digital_object_file_versions(build_directory: tempfile, filepaths: li
             f'❌ MULTIPLE DIGITAL OBJECTS FOUND: {archival_object["component_id"]}'
         )
     elif digital_object_count == 1:
-        cascflow.save_digital_object_file_versions(
-            archival_object, file_versions
-        )
+        cascflow.save_digital_object_file_versions(archival_object, file_versions)
     elif digital_object_count < 1:
         # returns new archival_object with digital_object instance included
         (
@@ -515,12 +518,12 @@ def create_digital_object_file_versions(build_directory: tempfile, filepaths: li
         ) = cascflow.create_digital_object(
             archival_object, digital_object_type=digital_object_type
         )
-        cascflow.save_digital_object_file_versions(
-            archival_object, file_versions
-        )
+        cascflow.save_digital_object_file_versions(archival_object, file_versions)
 
 
-def publish_archival_object_access_files(build_directory: tempfile, archival_object: dict, arrangement: dict) -> None:
+def publish_archival_object_access_files(
+    build_directory: tempfile, archival_object: dict, arrangement: dict
+) -> None:
     archival_object_access_path = "/".join(
         [
             config("ALCHEMIST_URL_PREFIX"),
@@ -743,7 +746,9 @@ def format_archival_object_notes_display(archival_object):
     return notes_display
 
 
-def generate_archival_object_page(build_directory: tempfile, archival_object: dict, arrangement: dict, mimetype: str) -> None:
+def generate_archival_object_page(
+    build_directory: tempfile, archival_object: dict, arrangement: dict, mimetype: str
+) -> None:
     try:
         logger.debug(f"🐞 BUILD_DIRECTORY.NAME: {build_directory.name}")
         environment = jinja2.Environment(
@@ -755,7 +760,9 @@ def generate_archival_object_page(build_directory: tempfile, archival_object: di
             # TODO use IIIF Presentation API 3.0; manifest.json files can supply video
             # NOTE template currently only handles mp4 files
             template = environment.get_template("video.tpl")
-            iiif_manifest_url = f'{archival_object["component_id"]}.{mimetype.split("/")[-1]}'
+            iiif_manifest_url = (
+                f'{archival_object["component_id"]}.{mimetype.split("/")[-1]}'
+            )
         else:
             template = environment.get_template("archival_object.tpl")
             iiif_manifest_url = "/".join(
@@ -770,15 +777,11 @@ def generate_archival_object_page(build_directory: tempfile, archival_object: di
         if arrangement.get("series_title"):
             series_display_string = arrangement["series_title"]
         else:
-            series_display_string = arrangement.get(
-                "series_display_string"
-            )
+            series_display_string = arrangement.get("series_display_string")
         if arrangement.get("subseries_title"):
             subseries_display_string = arrangement["subseries_title"]
         else:
-            subseries_display_string = arrangement.get(
-                "subseries_display_string"
-            )
+            subseries_display_string = arrangement.get("subseries_display_string")
         if arrangement.get("file_title"):
             file_display_string = arrangement["file_title"]
         else:
@@ -786,16 +789,10 @@ def generate_archival_object_page(build_directory: tempfile, archival_object: di
         if archival_object["component_id"]:
             identifier_display = archival_object["component_id"]
         creators = format_archival_object_creators_display(archival_object)
-        dates_display = format_archival_object_dates_display(
-            archival_object
-        )
-        extents_display = format_archival_object_extents_display(
-            archival_object
-        )
+        dates_display = format_archival_object_dates_display(archival_object)
+        extents_display = format_archival_object_extents_display(archival_object)
         subjects = format_archival_object_subjects_display(archival_object)
-        notes_display = format_archival_object_notes_display(
-            archival_object
-        )
+        notes_display = format_archival_object_notes_display(archival_object)
         archival_object_page_key = (
             Path(config("ALCHEMIST_URL_PREFIX"))
             .joinpath(
@@ -843,7 +840,13 @@ def generate_archival_object_page(build_directory: tempfile, archival_object: di
         raise
 
 
-def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict, mimetype: str) -> None:
+def generate_iiif_manifest(
+    build_directory: tempfile,
+    filepaths: list[Path],
+    archival_object: dict,
+    arrangement: dict,
+    mimetype: str,
+) -> None:
     if mimetype == "video/mp4":
         # TODO use IIIF Presentation API 3.0; manifest.json files can supply video
         return
@@ -856,9 +859,7 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
             }
         )
     if arrangement.get("series_title"):
-        metadata.append(
-            {"label": "Series", "value": arrangement["series_title"]}
-        )
+        metadata.append({"label": "Series", "value": arrangement["series_title"]})
     elif arrangement.get("series_display_string"):
         metadata.append(
             {
@@ -965,7 +966,9 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
                     "@id": get_thumbnail_url(filepaths, archival_object, arrangement),
                     "service": {
                         "@context": "http://iiif.io/api/image/2/context.json",
-                        "@id": get_thumbnail_url(filepaths, archival_object, arrangement).rsplit("/", maxsplit=4)[0],
+                        "@id": get_thumbnail_url(
+                            filepaths, archival_object, arrangement
+                        ).rsplit("/", maxsplit=4)[0],
                         "profile": "http://iiif.io/api/image/2/level1.json",
                     },
                 }
@@ -983,7 +986,13 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
                 sequence_indicators.update({archival_object["component_id"]: False})
         with ProcessPoolExecutor() as executor:
             futures = [
-                executor.submit(create_canvas_metadata, filepath, archival_object, arrangement, sequence_indicators)
+                executor.submit(
+                    create_canvas_metadata,
+                    filepath,
+                    archival_object,
+                    arrangement,
+                    sequence_indicators,
+                )
                 for filepath in sorted(filepaths)
             ]
             # maintain the order of the filepaths
@@ -1004,7 +1013,9 @@ def generate_iiif_manifest(build_directory: tempfile, filepaths: list[Path], arc
     logger.info(f"✨ MANIFEST FILE GENERATED: {manifest_file}")
 
 
-def create_pyramid_tiff(build_directory: tempfile, filepath: Path, archival_object: dict, arrangement: dict) -> None:
+def create_pyramid_tiff(
+    build_directory: tempfile, filepath: Path, archival_object: dict, arrangement: dict
+) -> None:
     try:
         # NOTE vips has problems with JP2 source images
         magick_identify = subprocess.run(
@@ -1023,7 +1034,7 @@ def create_pyramid_tiff(build_directory: tempfile, filepath: Path, archival_obje
         if magick_identify.stdout.strip() == "JP2":
             vips_source_image = (
                 Path(build_directory.name)
-                .joinpath(f'{filepath.stem}.tmp.tiff')
+                .joinpath(f"{filepath.stem}.tmp.tiff")
                 .as_posix()
             )
             subprocess.run(
@@ -1047,7 +1058,7 @@ def create_pyramid_tiff(build_directory: tempfile, filepath: Path, archival_obje
                 config("ALCHEMIST_URL_PREFIX"),
                 arrangement["collection_id"],
                 archival_object["component_id"],
-                f'{filepath.stem}.ptif',
+                f"{filepath.stem}.ptif",
             ]
         )
         pyramid_tiff_file = (
@@ -1080,7 +1091,9 @@ def create_pyramid_tiff(build_directory: tempfile, filepath: Path, archival_obje
         raise
 
 
-def conditional_derivative_file_processing(build_directory: tempfile, filepath: Path, archival_object: dict, arrangement: dict) -> None:
+def conditional_derivative_file_processing(
+    build_directory: tempfile, filepath: Path, archival_object: dict, arrangement: dict
+) -> None:
     type, encoding = mimetypes.guess_type(filepath)
 
     if type.startswith("image/"):
@@ -1134,31 +1147,41 @@ def conditional_derivative_file_processing(build_directory: tempfile, filepath: 
                 check=True,
             )
         except Exception:
-            logger.exception(
-                f'❌ VIDEO FILE COPY FAILED: {filepath}'
-            )
+            logger.exception(f"❌ VIDEO FILE COPY FAILED: {filepath}")
         else:
             logger.info(f"☑️ VIDEO FILE COPIED: {video_key}")
     else:
         logger.error(
-            "❌ {} FILES ARE NOT SUPPORTED AT THIS TIME: {}".format(
-                type, filepath.name
-            )
+            "❌ {} FILES ARE NOT SUPPORTED AT THIS TIME: {}".format(type, filepath.name)
         )
 
 
-def loop_over_archival_object_files(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict) -> None:
+def loop_over_archival_object_files(
+    build_directory: tempfile,
+    filepaths: list[Path],
+    archival_object: dict,
+    arrangement: dict,
+) -> None:
     """Concurrently process files in the filepaths list."""
     with ProcessPoolExecutor() as executor:
         [
             executor.submit(
-                conditional_derivative_file_processing, build_directory, filepath, archival_object, arrangement
+                conditional_derivative_file_processing,
+                build_directory,
+                filepath,
+                archival_object,
+                arrangement,
             )
             for filepath in filepaths
         ]
 
 
-def archival_object_level_processing(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict) -> None:
+def archival_object_level_processing(
+    build_directory: tempfile,
+    filepaths: list[Path],
+    archival_object: dict,
+    arrangement: dict,
+) -> None:
     logger.info(f'ℹ️  {archival_object["component_id"]}')
     # TODO consider conditions for identifiying non-image file types
     mimetype = ""
@@ -1166,12 +1189,20 @@ def archival_object_level_processing(build_directory: tempfile, filepaths: list[
         type, encoding = mimetypes.guess_type(filepaths[0])
         if type == "video/mp4":
             mimetype = type
-    generate_archival_object_page(build_directory, archival_object, arrangement, mimetype)
+    generate_archival_object_page(
+        build_directory, archival_object, arrangement, mimetype
+    )
     # `filepaths`` is set to [] if we are only updating metadata.
-    generate_iiif_manifest(build_directory, filepaths, archival_object, arrangement, mimetype)
+    generate_iiif_manifest(
+        build_directory, filepaths, archival_object, arrangement, mimetype
+    )
     if filepaths:
-        loop_over_archival_object_files(build_directory, filepaths, archival_object, arrangement)
-        logger.info(f'☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object["component_id"]}')
+        loop_over_archival_object_files(
+            build_directory, filepaths, archival_object, arrangement
+        )
+        logger.info(
+            f'☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object["component_id"]}'
+        )
 
 
 def has_sequence_indicator(stem: str) -> bool:
@@ -1179,13 +1210,19 @@ def has_sequence_indicator(stem: str) -> bool:
     # TODO add more robust checks for sequence indicators
     # checking for the patterns like CollectionID_001_01_001, CollectionID_001_01_001r, or CollectionID_001_01_001v
     components = stem.split("_")
-    if len(components) >= 3 and components[-1][:3].isdigit() and (len(components[-1]) == 3 or components[-1][3:] in {"r", "v"}):
+    if (
+        len(components) >= 3
+        and components[-1][:3].isdigit()
+        and (len(components[-1]) == 3 or components[-1][3:] in {"r", "v"})
+    ):
         return True
     else:
         return False
 
 
-def is_archival_object_eligible_for_publication(archival_object: dict, pipeline: str) -> bool:
+def is_archival_object_eligible_for_publication(
+    archival_object: dict, pipeline: str
+) -> bool:
     if not archival_object["publish"]:
         message = "‼️ ARCHIVAL OBJECT NOT PUBLISHED: [**{}**]({}/resolve/readonly?uri={})".format(
             archival_object["title"],
@@ -1217,7 +1254,10 @@ def is_archival_object_eligible_for_publication(archival_object: dict, pipeline:
             logger.error(message)
             return False
         elif digital_object_count == 1:
-            if instance["digital_object"]["_resolved"].get("file_versions") and pipeline == "publication":
+            if (
+                instance["digital_object"]["_resolved"].get("file_versions")
+                and pipeline == "publication"
+            ):
                 message = "‼️ DIGITAL OBJECT ALREADY HAS FILE VERSIONS: [**{}**]({}/resolve/readonly?uri={})".format(
                     instance["digital_object"]["_resolved"]["title"],
                     config("ARCHIVESSPACE_STAFF_URL"),
@@ -1253,7 +1293,9 @@ def is_publication_file_supported(entry: Path) -> bool:
         return False
 
 
-def validate_digital_files_for_publication(validation_results: dict, pipeline: str) -> None:
+def validate_digital_files_for_publication(
+    validation_results: dict, pipeline: str
+) -> None:
     source_path = Path(validation_results.get("source_path"))
     eligible_archival_objects = []
     ineligible_archival_objects = []
@@ -1265,7 +1307,7 @@ def validate_digital_files_for_publication(validation_results: dict, pipeline: s
     ## iterate over the first level of entries in the source directory
     for entry in source_path.iterdir():
         ## validate the entry (file or directory)
-        if (archival_object := cascflow.find_archival_object(entry.stem)):
+        if archival_object := cascflow.find_archival_object(entry.stem):
             if is_archival_object_eligible_for_publication(archival_object, pipeline):
                 eligible_archival_objects.append(entry.stem)
             else:
@@ -1335,19 +1377,31 @@ def main():
         "validate", help="Validate connections, files, and data."
     )
     validate_parser.add_argument(
-        "--target", required=True, choices=["publication", "metadata", "files"], help="String. Target for validation. Limited choices."
+        "--target",
+        required=True,
+        choices=["publication", "metadata", "files"],
+        help="String. Target for validation. Limited choices.",
     )
     validate_parser.add_argument(
-        "--context", required=True, help="String. Supply a volume name or an identifier, depending on the target."
+        "--context",
+        required=True,
+        help="String. Supply a volume name or an identifier, depending on the target.",
     )
 
     # subcommand: execute
-    execute_parser = subparsers.add_parser("execute", help="Execute the publication process.")
-    execute_parser.add_argument(
-        "--target", required=True, choices=["publication", "metadata", "files"], help="String. Target for validation. Limited choices."
+    execute_parser = subparsers.add_parser(
+        "execute", help="Execute the publication process."
     )
     execute_parser.add_argument(
-        "--context", required=True, help="String. Supply a volume name or an identifier, depending on the target."
+        "--target",
+        required=True,
+        choices=["publication", "metadata", "files"],
+        help="String. Target for validation. Limited choices.",
+    )
+    execute_parser.add_argument(
+        "--context",
+        required=True,
+        help="String. Supply a volume name or an identifier, depending on the target.",
     )
 
     args = parser.parse_args()
@@ -1365,29 +1419,55 @@ def main():
         if args.target == "metadata":
             # The context is an identifier string.
             parse_results = cascflow.parse_metadata_identifier(args.context)
-            for eligible_archival_object in parse_results.get("eligible_archival_objects", []):
-                archival_object = cascflow.find_archival_object(eligible_archival_object)
+            for eligible_archival_object in parse_results.get(
+                "eligible_archival_objects", []
+            ):
+                archival_object = cascflow.find_archival_object(
+                    eligible_archival_object
+                )
                 arrangement = cascflow.get_arrangement(archival_object)
                 filepaths = []
-                archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
-                publish_archival_object_access_files(build_directory, archival_object, arrangement)
+                archival_object_level_processing(
+                    build_directory, filepaths, archival_object, arrangement
+                )
+                publish_archival_object_access_files(
+                    build_directory, archival_object, arrangement
+                )
             if parse_results.get("identifier_level") == "resource":
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # Invalidate everything under the resource path component.
-                    invalidate_cloudfront_paths(paths=[f'/{config("ALCHEMIST_URL_PREFIX")}/{args.context}/*'])
+                    invalidate_cloudfront_paths(
+                        paths=[f'/{config("ALCHEMIST_URL_PREFIX")}/{args.context}/*']
+                    )
             else:
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # We should only have a single archival object.
-                    invalidate_cloudfront_paths(paths=[f'/{config("ALCHEMIST_URL_PREFIX")}/{arrangement["collection_id"]}/{args.context}/*'])
+                    invalidate_cloudfront_paths(
+                        paths=[
+                            f'/{config("ALCHEMIST_URL_PREFIX")}/{arrangement["collection_id"]}/{args.context}/*'
+                        ]
+                    )
         else:
             # Our target is either "publication" or "files". The context is the volume name.
             batch_set_id = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
             cloudfront_invalidation_batch = []
-            for batch_directory, stage_2_path_obj, filepaths, archival_object, arrangement in cascflow.execute(args.context, batch_set_id, args.target):
+            for (
+                batch_directory,
+                stage_2_path_obj,
+                filepaths,
+                archival_object,
+                arrangement,
+            ) in cascflow.execute(args.context, batch_set_id, args.target):
                 # process each result as it is yielded
-                archival_object_level_processing(build_directory, filepaths, archival_object, arrangement)
-                publish_archival_object_access_files(build_directory, archival_object, arrangement)
-                create_digital_object_file_versions(build_directory, filepaths, archival_object, arrangement)
+                archival_object_level_processing(
+                    build_directory, filepaths, archival_object, arrangement
+                )
+                publish_archival_object_access_files(
+                    build_directory, archival_object, arrangement
+                )
+                create_digital_object_file_versions(
+                    build_directory, filepaths, archival_object, arrangement
+                )
                 cascflow.move_to_stage_3(stage_2_path_obj, batch_directory)
                 if args.target == "files":
                     # Invalidate the paths for the updated files.
