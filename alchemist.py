@@ -1026,7 +1026,7 @@ def create_pyramid_tiff(build_directory: tempfile, filepath: Path, archival_obje
                 .joinpath(f'{filepath.stem}.tmp.tiff')
                 .as_posix()
             )
-            magick_convert = subprocess.run(
+            subprocess.run(
                 [
                     config("WORK_MAGICK_CMD"),
                     "convert",
@@ -1053,7 +1053,7 @@ def create_pyramid_tiff(build_directory: tempfile, filepath: Path, archival_obje
         pyramid_tiff_file = (
             Path(build_directory.name).joinpath(pyramid_tiff_key).as_posix()
         )
-        vips_tiffsave = subprocess.run(
+        subprocess.run(
             [
                 config("WORK_VIPS_CMD"),
                 "tiffsave",
@@ -1150,7 +1150,7 @@ def conditional_derivative_file_processing(build_directory: tempfile, filepath: 
 def loop_over_archival_object_files(build_directory: tempfile, filepaths: list[Path], archival_object: dict, arrangement: dict) -> None:
     """Concurrently process files in the filepaths list."""
     with ProcessPoolExecutor() as executor:
-        futures = [
+        [
             executor.submit(
                 conditional_derivative_file_processing, build_directory, filepath, archival_object, arrangement
             )
