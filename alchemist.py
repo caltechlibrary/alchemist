@@ -21,7 +21,59 @@ from decouple import config  # pypi: python-decouple
 
 import cascflow
 
-cascflow.setup_logging("settings.ini")
+parser = argparse.ArgumentParser(
+    description="Publication workflow for Caltech Archives."
+)
+parser.add_argument(
+    "--settings",
+    default=None,
+    help="Path to settings.ini file (optional). Defaults to working directory.",
+)
+subparsers = parser.add_subparsers(dest="command", required=True)
+
+# subcommand: validate
+validate_parser = subparsers.add_parser(
+    "validate", help="Validate connections, files, and data."
+)
+validate_parser.add_argument(
+    "--target",
+    required=True,
+    choices=["publication", "metadata", "files"],
+    help="String. Target for validation. Limited choices.",
+)
+validate_parser.add_argument(
+    "--context",
+    required=True,
+    help="String. Supply a volume name or an identifier, depending on the target.",
+)
+
+# subcommand: execute
+execute_parser = subparsers.add_parser(
+    "execute", help="Execute the publication process."
+)
+execute_parser.add_argument(
+    "--target",
+    required=True,
+    choices=["publication", "metadata", "files"],
+    help="String. Target for validation. Limited choices.",
+)
+execute_parser.add_argument(
+    "--context",
+    required=True,
+    help="String. Supply a volume name or an identifier, depending on the target.",
+)
+
+args = parser.parse_args()
+
+# set up settings path and logging
+if args.settings is not None:
+    settings_path = Path(args.settings).expanduser().resolve()
+else:
+    settings_path = Path(__file__).parent.joinpath("settings.ini").resolve()
+if not settings_path.exists():
+    raise FileNotFoundError(f"Settings file not found: {settings_path}")
+
+cascflow.setup_logging(str(settings_path))
 logger = logging.getLogger("alchemist")
 
 LINKED_AGENT_ARCHIVAL_RECORD_RELATORS = {
@@ -1367,45 +1419,6 @@ def validate_digital_files_for_publication(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Publication workflow for Caltech Archives."
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # subcommand: validate
-    validate_parser = subparsers.add_parser(
-        "validate", help="Validate connections, files, and data."
-    )
-    validate_parser.add_argument(
-        "--target",
-        required=True,
-        choices=["publication", "metadata", "files"],
-        help="String. Target for validation. Limited choices.",
-    )
-    validate_parser.add_argument(
-        "--context",
-        required=True,
-        help="String. Supply a volume name or an identifier, depending on the target.",
-    )
-
-    # subcommand: execute
-    execute_parser = subparsers.add_parser(
-        "execute", help="Execute the publication process."
-    )
-    execute_parser.add_argument(
-        "--target",
-        required=True,
-        choices=["publication", "metadata", "files"],
-        help="String. Target for validation. Limited choices.",
-    )
-    execute_parser.add_argument(
-        "--context",
-        required=True,
-        help="String. Supply a volume name or an identifier, depending on the target.",
-    )
-
-    args = parser.parse_args()
-
     # handle the commands
     logger.debug(f"🐞 TARGET: {args.target}")
     if args.command == "validate":
