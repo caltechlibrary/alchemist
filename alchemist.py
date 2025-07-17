@@ -493,7 +493,7 @@ def create_digital_object_file_versions(
     archival_object: dict,
     arrangement: dict,
 ) -> None:
-    logger.debug(f'🐞 ARCHIVAL_OBJECT: {archival_object["component_id"]}')
+    logger.debug(f"🐞 ARCHIVAL_OBJECT: {archival_object['component_id']}")
     logger.debug(f"🐞 BUILD_DIRECTORY: {build_directory}")
 
     archival_object_directory = (
@@ -546,7 +546,7 @@ def create_digital_object_file_versions(
         {
             "file_uri": archival_object_page_url,
             "jsonmodel_type": "file_version",
-            "caption": f'{archival_object["title"]} {digital_object_type.replace("_", " ")}',
+            "caption": f"{archival_object['title']} {digital_object_type.replace('_', ' ')}",
             "publish": True,
             "use_statement": "Web-Access",
         },
@@ -558,7 +558,7 @@ def create_digital_object_file_versions(
     logger.debug(f"🐞 DIGITAL OBJECT COUNT: {digital_object_count}")
     if digital_object_count > 1:
         raise ValueError(
-            f'❌ MULTIPLE DIGITAL OBJECTS FOUND: {archival_object["component_id"]}'
+            f"❌ MULTIPLE DIGITAL OBJECTS FOUND: {archival_object['component_id']}"
         )
     elif digital_object_count == 1:
         cascflow.save_digital_object_file_versions(archival_object, file_versions)
@@ -589,7 +589,7 @@ def publish_archival_object_access_files(
                 config("WORK_S5CMD_CMD"),
                 "sync",
                 f"{build_directory.name}/{archival_object_access_path}/*",
-                f's3://{config("ALCHEMIST_BUCKET")}/{archival_object_access_path}/',
+                f"s3://{config('ALCHEMIST_BUCKET')}/{archival_object_access_path}/",
             ],
             env={
                 "AWS_ACCESS_KEY_ID": config("DISTILLERY_AWS_ACCESS_KEY_ID"),
@@ -613,7 +613,7 @@ def format_archival_object_creators_display(archival_object):
         if linked_agent["_resolved"]["publish"] and linked_agent["role"] == "creator":
             sort_name = linked_agent["_resolved"]["display_name"]["sort_name"]
             if linked_agent.get("relator"):
-                sort_name += f' [{LINKED_AGENT_ARCHIVAL_RECORD_RELATORS[linked_agent["relator"]]}]'
+                sort_name += f" [{LINKED_AGENT_ARCHIVAL_RECORD_RELATORS[linked_agent['relator']]}]"
             creators[linked_agent["ref"]] = sort_name
     return creators
 
@@ -710,7 +710,7 @@ def format_archival_object_dates_display(archival_object):
 def format_archival_object_extents_display(archival_object):
     extents_display = []
     for extent in archival_object["extents"]:
-        extents_display.append(f'{extent["number"].strip()} {extent["extent_type"]}')
+        extents_display.append(f"{extent['number'].strip()} {extent['extent_type']}")
     return extents_display
 
 
@@ -724,7 +724,7 @@ def format_archival_object_subjects_display(archival_object):
         if linked_agent["_resolved"]["publish"] and linked_agent["role"] == "subject":
             sort_name = linked_agent["_resolved"]["display_name"]["sort_name"]
             if linked_agent.get("relator"):
-                sort_name += f' [{LINKED_AGENT_ARCHIVAL_RECORD_RELATORS[linked_agent["relator"]]}]'
+                sort_name += f" [{LINKED_AGENT_ARCHIVAL_RECORD_RELATORS[linked_agent['relator']]}]"
             subjects[linked_agent["ref"]] = sort_name
     return subjects
 
@@ -813,7 +813,7 @@ def generate_archival_object_page(
             # NOTE template currently only handles mp4 files
             template = environment.get_template("video.tpl")
             iiif_manifest_url = (
-                f'{archival_object["component_id"]}.{mimetype.split("/")[-1]}'
+                f"{archival_object['component_id']}.{mimetype.split('/')[-1]}"
             )
         else:
             template = environment.get_template("archival_object.tpl")
@@ -1234,7 +1234,7 @@ def archival_object_level_processing(
     archival_object: dict,
     arrangement: dict,
 ) -> None:
-    logger.info(f'ℹ️  {archival_object["component_id"]}')
+    logger.info(f"ℹ️  {archival_object['component_id']}")
     # TODO consider conditions for identifiying non-image file types
     mimetype = ""
     if filepaths and len(filepaths) == 1:
@@ -1253,7 +1253,7 @@ def archival_object_level_processing(
             build_directory, filepaths, archival_object, arrangement
         )
         logger.info(
-            f'☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object["component_id"]}'
+            f"☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object['component_id']}"
         )
 
 
@@ -1450,14 +1450,14 @@ def main():
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # Invalidate everything under the resource path component.
                     invalidate_cloudfront_paths(
-                        paths=[f'/{config("ALCHEMIST_URL_PREFIX")}/{args.context}/*']
+                        paths=[f"/{config('ALCHEMIST_URL_PREFIX')}/{args.context}/*"]
                     )
             else:
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # We should only have a single archival object.
                     invalidate_cloudfront_paths(
                         paths=[
-                            f'/{config("ALCHEMIST_URL_PREFIX")}/{arrangement["collection_id"]}/{args.context}/*'
+                            f"/{config('ALCHEMIST_URL_PREFIX')}/{arrangement['collection_id']}/{args.context}/*"
                         ]
                     )
         else:
