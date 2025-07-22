@@ -388,7 +388,7 @@ def create_canvas_metadata(
 ) -> dict:
     magick_identify = subprocess.run(
         [
-            config("WORK_MAGICK_CMD"),
+            config("MAGICK_CMD"),
             "identify",
             "-format",
             "%w*%h",
@@ -586,14 +586,14 @@ def publish_archival_object_access_files(
     try:
         s5cmd_sync = subprocess.run(
             [
-                config("WORK_S5CMD_CMD"),
+                config("S5CMD_CMD"),
                 "sync",
                 f"{build_directory.name}/{archival_object_access_path}/*",
                 f"s3://{config('ALCHEMIST_BUCKET')}/{archival_object_access_path}/",
             ],
             env={
-                "AWS_ACCESS_KEY_ID": config("DISTILLERY_AWS_ACCESS_KEY_ID"),
-                "AWS_SECRET_ACCESS_KEY": config("DISTILLERY_AWS_SECRET_ACCESS_KEY"),
+                "AWS_ACCESS_KEY_ID": config("ALCHEMIST_AWS_ACCESS_KEY_ID"),
+                "AWS_SECRET_ACCESS_KEY": config("ALCHEMIST_AWS_SECRET_ACCESS_KEY"),
             },
             capture_output=True,
             check=True,
@@ -1072,7 +1072,7 @@ def create_pyramid_tiff(
         # NOTE vips has problems with JP2 source images
         magick_identify = subprocess.run(
             [
-                config("WORK_MAGICK_CMD"),
+                config("MAGICK_CMD"),
                 "identify",
                 "-format",
                 "%m",
@@ -1091,7 +1091,7 @@ def create_pyramid_tiff(
             )
             subprocess.run(
                 [
-                    config("WORK_MAGICK_CMD"),
+                    config("MAGICK_CMD"),
                     "convert",
                     "-quiet",
                     filepath.as_posix(),
@@ -1118,7 +1118,7 @@ def create_pyramid_tiff(
         )
         subprocess.run(
             [
-                config("WORK_VIPS_CMD"),
+                config("VIPS_CMD"),
                 "tiffsave",
                 vips_source_image,
                 pyramid_tiff_file,
@@ -1166,7 +1166,7 @@ def conditional_derivative_file_processing(
             # create a thumbnail from the midpoint of the video
             duration = subprocess.run(
                 [
-                    config("WORK_FFPROBE_CMD"),
+                    config("FFPROBE_CMD"),
                     "-v",
                     "error",
                     "-show_entries",
@@ -1182,7 +1182,7 @@ def conditional_derivative_file_processing(
             midpoint = str(float(duration) / 2)
             subprocess.run(
                 [
-                    config("WORK_FFMPEG_CMD"),
+                    config("FFMPEG_CMD"),
                     "-y",
                     "-v",
                     "error",
