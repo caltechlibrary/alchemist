@@ -17,7 +17,7 @@ from pathlib import Path
 import boto3  # pypi: boto3
 import jinja2  # pypi: Jinja2
 
-from decouple import config  # pypi: python-decouple
+from decouple import Config, RepositoryIni  # pypi: python-decouple
 
 import cascflow
 
@@ -72,6 +72,9 @@ else:
     settings_path = Path(__file__).parent.joinpath("settings.ini").resolve()
 if not settings_path.exists():
     raise FileNotFoundError(f"Settings file not found: {settings_path}")
+# configure cascflow to use our settings.ini file
+config = Config(RepositoryIni(settings_path))
+cascflow.set_config(config)
 
 cascflow.setup_logging(str(settings_path))
 logger = logging.getLogger("alchemist")
