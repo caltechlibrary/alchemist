@@ -17,7 +17,7 @@ from pathlib import Path
 import boto3  # pypi: boto3
 import jinja2  # pypi: Jinja2
 
-from decouple import config  # pypi: python-decouple
+from decouple import Config, RepositoryIni  # pypi: python-decouple
 
 import cascflow
 
@@ -72,6 +72,9 @@ else:
     settings_path = Path(__file__).parent.joinpath("settings.ini").resolve()
 if not settings_path.exists():
     raise FileNotFoundError(f"Settings file not found: {settings_path}")
+# configure cascflow to use our settings.ini file
+config = Config(RepositoryIni(settings_path))
+cascflow.set_config(config)
 
 cascflow.setup_logging(str(settings_path))
 logger = logging.getLogger("alchemist")
@@ -358,8 +361,8 @@ def invalidate_cloudfront_paths(paths=None, caller_reference=None):
         caller_reference = str(time.time())
     cloudfront_client = boto3.client(
         "cloudfront",
-        aws_access_key_id=config("ALCHEMIST_AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=config("ALCHEMIST_AWS_SECRET_ACCESS_KEY"),
+        aws_access_key_id=config("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=config("AWS_SECRET_ACCESS_KEY"),
     )
     if paths is None:
         paths = ["/*"]
@@ -402,7 +405,7 @@ def create_canvas_metadata(
     canvas_id = "/".join(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
-            config("ALCHEMIST_URL_PREFIX"),
+            config("COMMON_PATH_PREFIX"),
             arrangement["collection_id"],
             archival_object["component_id"],
             "canvas",
@@ -411,7 +414,7 @@ def create_canvas_metadata(
     )
     escaped_identifier = "/".join(
         [
-            config("ALCHEMIST_URL_PREFIX"),
+            config("COMMON_PATH_PREFIX"),
             arrangement["collection_id"],
             archival_object["component_id"],
             filepath.stem,
@@ -459,7 +462,7 @@ def get_thumbnail_url(
         return "/".join(
             [
                 config("ALCHEMIST_BASE_URL").rstrip("/"),
-                config("ALCHEMIST_URL_PREFIX"),
+                config("COMMON_PATH_PREFIX"),
                 arrangement["collection_id"],
                 archival_object["component_id"],
                 "thumbnail.webp",
@@ -467,7 +470,7 @@ def get_thumbnail_url(
         )
     thumbnail_id = "/".join(
         [
-            config("ALCHEMIST_URL_PREFIX"),
+            config("COMMON_PATH_PREFIX"),
             arrangement["collection_id"],
             archival_object[
                 "component_id"
@@ -499,7 +502,7 @@ def create_digital_object_file_versions(
     archival_object_directory = (
         Path(build_directory.name)
         .joinpath(
-            config("ALCHEMIST_URL_PREFIX"),
+            config("COMMON_PATH_PREFIX"),
             arrangement["collection_id"],
             archival_object["component_id"],
         )
@@ -510,7 +513,7 @@ def create_digital_object_file_versions(
     archival_object_page_url = "/".join(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
-            config("ALCHEMIST_URL_PREFIX"),
+            config("COMMON_PATH_PREFIX"),
             arrangement["collection_id"],
             archival_object["component_id"],
         ]
@@ -578,7 +581,7 @@ def publish_archival_object_access_files(
 ) -> None:
     archival_object_access_path = "/".join(
         [
-            config("ALCHEMIST_URL_PREFIX"),
+            config("COMMON_PATH_PREFIX"),
             arrangement["collection_id"],
             archival_object["component_id"],
         ]
@@ -589,11 +592,11 @@ def publish_archival_object_access_files(
                 config("S5CMD_CMD"),
                 "sync",
                 f"{build_directory.name}/{archival_object_access_path}/*",
-                f"s3://{config('ALCHEMIST_BUCKET')}/{archival_object_access_path}/",
+                f"s3://{config('S3_BUCKET')}/{archival_object_access_path}/",
             ],
             env={
-                "AWS_ACCESS_KEY_ID": config("ALCHEMIST_AWS_ACCESS_KEY_ID"),
-                "AWS_SECRET_ACCESS_KEY": config("ALCHEMIST_AWS_SECRET_ACCESS_KEY"),
+                "AWS_ACCESS_KEY_ID": config("AWS_ACCESS_KEY_ID"),
+                "AWS_SECRET_ACCESS_KEY": config("AWS_SECRET_ACCESS_KEY"),
             },
             capture_output=True,
             check=True,
@@ -820,7 +823,7 @@ def generate_archival_object_page(
             iiif_manifest_url = "/".join(
                 [
                     config("ALCHEMIST_BASE_URL").rstrip("/"),
-                    config("ALCHEMIST_URL_PREFIX"),
+                    config("COMMON_PATH_PREFIX"),
                     arrangement["collection_id"],
                     archival_object["component_id"],
                     "manifest.json",
@@ -846,7 +849,7 @@ def generate_archival_object_page(
         subjects = format_archival_object_subjects_display(archival_object)
         notes_display = format_archival_object_notes_display(archival_object)
         archival_object_page_key = (
-            Path(config("ALCHEMIST_URL_PREFIX"))
+            Path(config("COMMON_PATH_PREFIX"))
             .joinpath(
                 arrangement["collection_id"],
                 archival_object["component_id"],
@@ -982,7 +985,7 @@ def generate_iiif_manifest(
     # Use an existing manifiest file if we are only updating metadata and have no filepaths.
     if not filepaths:
         manifest_key = (
-            Path(config("ALCHEMIST_URL_PREFIX"))
+            Path(config("COMMON_PATH_PREFIX"))
             .joinpath(
                 arrangement["collection_id"],
                 archival_object["component_id"],
@@ -990,7 +993,7 @@ def generate_iiif_manifest(
             )
             .as_posix()
         )
-        response = cascflow.s3_get_object(config("ALCHEMIST_BUCKET"), manifest_key)
+        response = cascflow.s3_get_object(config("S3_BUCKET"), manifest_key)
         manifest = json.loads(response["Body"].read())
     else:
         manifest = {
@@ -999,7 +1002,7 @@ def generate_iiif_manifest(
             "@id": "/".join(
                 [
                     config("ALCHEMIST_BASE_URL").rstrip("/"),
-                    config("ALCHEMIST_URL_PREFIX"),
+                    config("COMMON_PATH_PREFIX"),
                     arrangement["collection_id"],
                     archival_object["component_id"],
                     "manifest.json",
@@ -1054,7 +1057,7 @@ def generate_iiif_manifest(
                 manifest["sequences"][0]["canvases"].append(future.result())
     # save manifest file
     manifest_file = Path(build_directory.name).joinpath(
-        config("ALCHEMIST_URL_PREFIX"),
+        config("COMMON_PATH_PREFIX"),
         arrangement["collection_id"],
         archival_object["component_id"],
         "manifest.json",
@@ -1107,7 +1110,7 @@ def create_pyramid_tiff(
             vips_source_image = filepath.as_posix()
         pyramid_tiff_key = "/".join(
             [
-                config("ALCHEMIST_URL_PREFIX"),
+                config("COMMON_PATH_PREFIX"),
                 arrangement["collection_id"],
                 archival_object["component_id"],
                 f"{filepath.stem}.ptif",
@@ -1153,7 +1156,7 @@ def conditional_derivative_file_processing(
     elif type.startswith("video/"):
         video_key = "/".join(
             [
-                config("ALCHEMIST_URL_PREFIX"),
+                config("COMMON_PATH_PREFIX"),
                 arrangement["collection_id"],
                 archival_object["component_id"],
                 filepath.name,
@@ -1450,14 +1453,14 @@ def main():
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # Invalidate everything under the resource path component.
                     invalidate_cloudfront_paths(
-                        paths=[f"/{config('ALCHEMIST_URL_PREFIX')}/{args.context}/*"]
+                        paths=[f"/{config('COMMON_PATH_PREFIX')}/{args.context}/*"]
                     )
             else:
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # We should only have a single archival object.
                     invalidate_cloudfront_paths(
                         paths=[
-                            f"/{config('ALCHEMIST_URL_PREFIX')}/{arrangement['collection_id']}/{args.context}/*"
+                            f"/{config('COMMON_PATH_PREFIX')}/{arrangement['collection_id']}/{args.context}/*"
                         ]
                     )
         else:
@@ -1488,7 +1491,7 @@ def main():
                         "/".join(
                             [
                                 "",  ## start with a leading slash
-                                config("ALCHEMIST_URL_PREFIX"),
+                                config("COMMON_PATH_PREFIX"),
                                 arrangement["collection_id"],
                                 archival_object["component_id"],
                                 "*",  ## end with a wildcard
