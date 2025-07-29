@@ -1033,7 +1033,7 @@ def generate_iiif_manifest(
     if attribution:
         manifest["attribution"] = attribution
     # Update sequence indicators and canvas metadata if we have filepaths.
-    if filepaths and len(filepaths) > 1:
+    if filepaths:
         manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
         sequence_indicators = {archival_object["component_id"]: True}
         for filepath in filepaths:
