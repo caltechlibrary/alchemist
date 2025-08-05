@@ -1359,10 +1359,13 @@ def validate_digital_files_for_publication(
     file_count = validation_results.get("file_count", 0)
     unsupported_files = []
     sequence_indicators = {}
+    # get the cached archival object data from validation_results
+    cached_archival_objects = validation_results.get("eligible_archival_objects", {})
     ## iterate over the first level of entries in the source directory
     for entry in source_path.iterdir():
-        ## validate the entry (file or directory)
-        if archival_object := cascflow.find_archival_object(entry.stem):
+        ## validate the entry (file or directory) using cached data
+        if entry.stem in cached_archival_objects:
+            archival_object = cached_archival_objects[entry.stem]
             if is_archival_object_eligible_for_publication(archival_object, pipeline):
                 eligible_archival_objects.append(entry.stem)
             else:
@@ -1426,7 +1429,7 @@ def main():
     logger.debug(f"🐞 TARGET: {args.target}")
     if args.command == "validate":
         if args.target == "metadata":
-            cascflow.parse_metadata_identifier(args.context)
+            cascflow.validate_metadata_identifier(args.context)
         else:
             validation_results = cascflow.validate_digital_files(args.context)
             validate_digital_files_for_publication(validation_results, args.target)
@@ -1434,13 +1437,10 @@ def main():
         build_directory = tempfile.TemporaryDirectory()
         if args.target == "metadata":
             # The context is an identifier string.
-            parse_results = cascflow.parse_metadata_identifier(args.context)
-            for eligible_archival_object in parse_results.get(
-                "eligible_archival_objects", []
-            ):
-                archival_object = cascflow.find_archival_object(
-                    eligible_archival_object
-                )
+            validation_results = cascflow.validate_metadata_identifier(args.context)
+            for component_id, archival_object in validation_results.get(
+                "eligible_archival_objects", {}
+            ).items():
                 arrangement = cascflow.get_arrangement(archival_object)
                 filepaths = []
                 archival_object_level_processing(
@@ -1449,7 +1449,7 @@ def main():
                 publish_archival_object_access_files(
                     build_directory, archival_object, arrangement
                 )
-            if parse_results.get("identifier_level") == "resource":
+            if validation_results.get("identifier_level") == "resource":
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # Invalidate everything under the resource path component.
                     invalidate_cloudfront_paths(
