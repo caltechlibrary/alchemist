@@ -104,8 +104,8 @@ wheels = [
 
 [[package]]
 name = "cascflow"
-version = "3.0.0"
-source = { git = "https://github.com/caltechlibrary/cascflow?branch=main#58aa81d048745cd991d3d768d07efb745de1eeed" }
+version = "3.0.1"
+source = { git = "https://github.com/caltechlibrary/cascflow?branch=main#893751a3186fc37e282faada6056fe3917b80efc" }
 dependencies = [
     { name = "archivessnake" },
     { name = "backoff" },
