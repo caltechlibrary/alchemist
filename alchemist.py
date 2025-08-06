@@ -1391,7 +1391,7 @@ def validate_digital_files_for_publication(
             if sequence_indicators.get(eligible_archival_object):
                 logger.info("🔢 CANVAS LABELS WILL USE SEQUENTIAL INDICATORS")
             else:
-                logger.info("📁 CANVAS LABELS WILL USE FILENAME STEMS")
+                logger.info("🔠 CANVAS LABELS WILL USE FILENAME STEMS")
         logger.info(f"🗂 ARCHIVAL OBJECT COUNT: {len(eligible_archival_objects)}")
         logger.info(f"📄 FILE COUNT: {file_count}")
     ## validation and messaging
