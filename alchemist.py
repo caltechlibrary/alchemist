@@ -1385,6 +1385,7 @@ def validate_digital_files_for_publication(
                         unsupported_files.append(child)
     ## messaging
     if eligible_archival_objects:
+        logger.info(f"{eligible_archival_objects[0]}{', …' if len(eligible_archival_objects) > 1 else ''}")
         for eligible_archival_object in eligible_archival_objects:
             logger.info(f"🉑 {eligible_archival_object}")
             if sequence_indicators.get(eligible_archival_object):
@@ -1429,6 +1430,7 @@ def main():
     logger.debug(f"🐞 TARGET: {args.target}")
     if args.command == "validate":
         if args.target == "metadata":
+            logger.info(args.context)
             cascflow.validate_metadata_identifier(args.context)
         else:
             validation_results = cascflow.validate_digital_files(args.context)
