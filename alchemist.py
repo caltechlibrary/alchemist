@@ -13,11 +13,12 @@ import time
 
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import boto3  # pypi: boto3
 import jinja2  # pypi: Jinja2
 
-from decouple import Config, RepositoryIni  # pypi: python-decouple
+from decouple import Config, RepositoryIni  # pypi: python-decouple-typed
 
 import cascflow
 
@@ -491,7 +492,7 @@ def get_thumbnail_url(
 
 
 def create_digital_object_file_versions(
-    build_directory: tempfile,
+    build_directory: tempfile.TemporaryDirectory[str],
     filepaths: list[Path],
     archival_object: dict,
     arrangement: dict,
@@ -577,7 +578,7 @@ def create_digital_object_file_versions(
 
 
 def publish_archival_object_access_files(
-    build_directory: tempfile, archival_object: dict, arrangement: dict
+    build_directory: tempfile.TemporaryDirectory[str], archival_object: dict, arrangement: dict
 ) -> None:
     archival_object_access_path = "/".join(
         [
@@ -802,7 +803,7 @@ def format_archival_object_notes_display(archival_object):
 
 
 def generate_archival_object_page(
-    build_directory: tempfile, archival_object: dict, arrangement: dict, mimetype: str
+    build_directory: tempfile.TemporaryDirectory[str], archival_object: dict, arrangement: dict, mimetype: str
 ) -> None:
     try:
         logger.debug(f"🐞 BUILD_DIRECTORY.NAME: {build_directory.name}")
@@ -841,8 +842,7 @@ def generate_archival_object_page(
             file_display_string = arrangement["file_title"]
         else:
             file_display_string = arrangement.get("file_display_string")
-        if archival_object["component_id"]:
-            identifier_display = archival_object["component_id"]
+        identifier_display = archival_object.get("component_id", "")
         creators = format_archival_object_creators_display(archival_object)
         dates_display = format_archival_object_dates_display(archival_object)
         extents_display = format_archival_object_extents_display(archival_object)
@@ -896,7 +896,7 @@ def generate_archival_object_page(
 
 
 def generate_iiif_manifest(
-    build_directory: tempfile,
+    build_directory: tempfile.TemporaryDirectory[str],
     filepaths: list[Path],
     archival_object: dict,
     arrangement: dict,
@@ -994,9 +994,11 @@ def generate_iiif_manifest(
             .as_posix()
         )
         response = cascflow.s3_get_object(config("S3_BUCKET"), manifest_key)
+        if response is None:
+            raise FileNotFoundError(f"❌ MANIFEST NOT FOUND IN S3: {manifest_key}")
         manifest = json.loads(response["Body"].read())
     else:
-        manifest = {
+        manifest: dict[str, Any] = {
             "@context": "http://iiif.io/api/presentation/2/context.json",
             "@type": "sc:Manifest",
             "@id": "/".join(
@@ -1069,7 +1071,7 @@ def generate_iiif_manifest(
 
 
 def create_pyramid_tiff(
-    build_directory: tempfile, filepath: Path, archival_object: dict, arrangement: dict
+    build_directory: tempfile.TemporaryDirectory[str], filepath: Path, archival_object: dict, arrangement: dict
 ) -> None:
     try:
         # NOTE vips has problems with JP2 source images
@@ -1147,9 +1149,13 @@ def create_pyramid_tiff(
 
 
 def conditional_derivative_file_processing(
-    build_directory: tempfile, filepath: Path, archival_object: dict, arrangement: dict
+    build_directory: tempfile.TemporaryDirectory[str], filepath: Path, archival_object: dict, arrangement: dict
 ) -> None:
-    type, encoding = mimetypes.guess_type(filepath)
+    type, encoding = mimetypes.guess_type(filepath.as_posix())
+
+    if not type:
+        logger.error("❌ UNKNOWN MIME TYPE: %s", filepath.name)
+        return
 
     if type.startswith("image/"):
         create_pyramid_tiff(build_directory, filepath, archival_object, arrangement)
@@ -1212,7 +1218,7 @@ def conditional_derivative_file_processing(
 
 
 def loop_over_archival_object_files(
-    build_directory: tempfile,
+    build_directory: tempfile.TemporaryDirectory[str],
     filepaths: list[Path],
     archival_object: dict,
     arrangement: dict,
@@ -1232,7 +1238,7 @@ def loop_over_archival_object_files(
 
 
 def archival_object_level_processing(
-    build_directory: tempfile,
+    build_directory: tempfile.TemporaryDirectory[str],
     filepaths: list[Path],
     archival_object: dict,
     arrangement: dict,
@@ -1241,7 +1247,7 @@ def archival_object_level_processing(
     # TODO consider conditions for identifiying non-image file types
     mimetype = ""
     if filepaths and len(filepaths) == 1:
-        type, encoding = mimetypes.guess_type(filepaths[0])
+        type, encoding = mimetypes.guess_type(filepaths[0].as_posix())
         if type == "video/mp4":
             mimetype = type
     generate_archival_object_page(
@@ -1296,7 +1302,11 @@ def is_archival_object_eligible_for_publication(
         return False
     ## check for existing digital_object["file_versions"]
     elif archival_object.get("instances"):
-        digital_object_count = 0
+        digital_object_instances = [
+            instance for instance in archival_object["instances"]
+            if "digital_object" in instance.keys()
+        ]
+        digital_object_count = len(digital_object_instances)
         for instance in archival_object["instances"]:
             if "digital_object" in instance.keys():
                 digital_object_count += 1
@@ -1309,6 +1319,7 @@ def is_archival_object_eligible_for_publication(
             logger.error(message)
             return False
         elif digital_object_count == 1:
+            instance = digital_object_instances[0]
             if (
                 instance["digital_object"]["_resolved"].get("file_versions")
                 and pipeline == "publication"
@@ -1340,7 +1351,7 @@ def is_archival_object_eligible_for_publication(
 
 
 def is_publication_file_supported(entry: Path) -> bool:
-    type, encoding = mimetypes.guess_type(entry)
+    type, encoding = mimetypes.guess_type(entry.as_posix())
     ## TODO set supported types in configuration
     if type and (type.startswith("image/") or type.endswith("/mp4")):
         return True
@@ -1351,7 +1362,11 @@ def is_publication_file_supported(entry: Path) -> bool:
 def validate_digital_files_for_publication(
     validation_results: dict, pipeline: str
 ) -> None:
-    source_path = Path(validation_results.get("source_path"))
+    source_path = validation_results.get("source_path")
+    if not source_path:
+        logger.error("❌ SOURCE PATH NOT FOUND IN VALIDATION RESULTS")
+        return
+    source_path = Path(source_path)
     eligible_archival_objects = []
     ineligible_archival_objects = []
     nested_directories = validation_results.get("nested_directories", [])
@@ -1440,6 +1455,7 @@ def main():
         if args.target == "metadata":
             # The context is an identifier string.
             validation_results = cascflow.validate_metadata_identifier(args.context)
+            arrangement = None
             for component_id, archival_object in validation_results.get(
                 "eligible_archival_objects", {}
             ).items():
@@ -1460,11 +1476,12 @@ def main():
             else:
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # We should only have a single archival object.
-                    invalidate_cloudfront_paths(
-                        paths=[
-                            f"/{config('COMMON_PATH_PREFIX')}/{arrangement['collection_id']}/{args.context}/*"
-                        ]
-                    )
+                    if arrangement is not None:
+                        invalidate_cloudfront_paths(
+                            paths=[
+                                f"/{config('COMMON_PATH_PREFIX')}/{arrangement['collection_id']}/{args.context}/*"
+                            ]
+                        )
         else:
             # Our target is either "publication" or "files". The context is the volume name.
             batch_set_id = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
