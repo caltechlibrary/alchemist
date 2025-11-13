@@ -10,7 +10,7 @@ dependencies = [
     { name = "boto3" },
     { name = "cascflow" },
     { name = "jinja2" },
-    { name = "python-decouple" },
+    { name = "python-decouple-typed" },
 ]
 
 [package.dev-dependencies]
@@ -23,7 +23,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.40" },
     { name = "cascflow", git = "https://github.com/caltechlibrary/cascflow?branch=main" },
     { name = "jinja2", specifier = ">=3.1" },
-    { name = "python-decouple", specifier = ">=3.8" },
+    { name = "python-decouple-typed", specifier = ">=3.11.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -232,6 +232,14 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e1/97/373dcd5844ec0ea5893e13c39a2c67e7537987ad8de3842fe078db4582fa/python-decouple-3.8.tar.gz", hash = "sha256:ba6e2657d4f376ecc46f77a3a615e058d93ba5e465c01bbe57289bfb7cce680f", size = 9612, upload-time = "2023-03-01T19:38:38.143Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/d4/9193206c4563ec771faf2ccf54815ca7918529fe81f6adb22ee6d0e06622/python_decouple-3.8-py3-none-any.whl", hash = "sha256:d0d45340815b25f4de59c974b855bb38d03151d81b037d9e3f463b0c9f8cbd66", size = 9947, upload-time = "2023-03-01T19:38:36.015Z" },
+]
+
+[[package]]
+name = "python-decouple-typed"
+version = "3.11.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/ca/fc5a6119146651cbfbb4aae333a2e6f69844161092c450b10e97064f5e75/python_decouple_typed-3.11.0-py3-none-any.whl", hash = "sha256:967665073aec7a861844e0d9d21768324d3d819311574702cf5be7403a18da58", size = 11440, upload-time = "2023-12-17T14:43:22.043Z" },
 ]
 
 [[package]]
