@@ -1307,9 +1307,6 @@ def is_archival_object_eligible_for_publication(
             if "digital_object" in instance.keys()
         ]
         digital_object_count = len(digital_object_instances)
-        for instance in archival_object["instances"]:
-            if "digital_object" in instance.keys():
-                digital_object_count += 1
         if digital_object_count > 1:
             message = "‼️ MULTIPLE DIGITAL OBJECTS FOUND: [**{}**]({}/resolve/readonly?uri={})".format(
                 archival_object["title"],
