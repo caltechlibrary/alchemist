@@ -604,12 +604,15 @@ def publish_archival_object_access_files(
 def format_archival_object_creators_display(archival_object):
     # TODO check for creators higher up in the hierarchy
     creators = {}
-    for linked_agent in archival_object["linked_agents"]:
-        if linked_agent["_resolved"]["publish"] and linked_agent["role"] == "creator":
-            sort_name = linked_agent["_resolved"]["display_name"]["sort_name"]
-            if linked_agent.get("relator"):
-                sort_name += f" [{LINKED_AGENT_ARCHIVAL_RECORD_RELATORS[linked_agent['relator']]}]"
-            creators[linked_agent["ref"]] = sort_name
+    for linked_agent in archival_object.get("linked_agents", []):
+        resolved = linked_agent.get("_resolved", {})
+        if resolved.get("publish") and linked_agent.get("role") == "creator":
+            sort_name = resolved.get("display_name", {}).get("sort_name", "")
+            relator = linked_agent.get("relator")
+            if relator:
+                relator_label = LINKED_AGENT_ARCHIVAL_RECORD_RELATORS.get(relator, relator)
+                sort_name += f" [{relator_label}]"
+            creators[linked_agent.get("ref", "")] = sort_name
     return creators
 
 
@@ -630,21 +633,22 @@ def format_archival_object_dates_display(archival_object):
         "12": "December",
     }
     dates_display = []
-    for date in archival_object["dates"]:
-        if date["label"] == "creation":
-            # NOTE filter(None, ...) removes empty strings from the list
-            if date.get("end"):
-                if date["begin"][:4] == date["end"][:4]:
-                    # NOTE exclude the end year per DACS: 1975 March-August
+    for date in archival_object.get("dates", []):
+        if date.get("label") == "creation":
+            begin = date.get("begin", "")
+            end = date.get("end", "")
+            expression = date.get("expression", "")
+            if end:
+                if begin[:4] == end[:4]:
                     dates_display.append(
                         "{} to {}".format(
                             " ".join(
                                 filter(
                                     None,
                                     [
-                                        date.get("begin")[:4],
-                                        months.get(date.get("begin")[5:7], ""),
-                                        date.get("begin")[8:10].lstrip("0"),
+                                        begin[:4],
+                                        months.get(begin[5:7], ""),
+                                        begin[8:10].lstrip("0"),
                                     ],
                                 )
                             ),
@@ -652,8 +656,8 @@ def format_archival_object_dates_display(archival_object):
                                 filter(
                                     None,
                                     [
-                                        months.get(date.get("end")[5:7], ""),
-                                        date.get("end")[8:10].lstrip("0"),
+                                        months.get(end[5:7], ""),
+                                        end[8:10].lstrip("0"),
                                     ],
                                 )
                             ),
@@ -666,9 +670,9 @@ def format_archival_object_dates_display(archival_object):
                                 filter(
                                     None,
                                     [
-                                        date.get("begin")[:4],
-                                        months.get(date.get("begin")[5:7], ""),
-                                        date.get("begin")[8:10].lstrip("0"),
+                                        begin[:4],
+                                        months.get(begin[5:7], ""),
+                                        begin[8:10].lstrip("0"),
                                     ],
                                 )
                             ),
@@ -676,51 +680,57 @@ def format_archival_object_dates_display(archival_object):
                                 filter(
                                     None,
                                     [
-                                        date.get("end")[:4],
-                                        months.get(date.get("end")[5:7], ""),
-                                        date.get("end")[8:10].lstrip("0"),
+                                        end[:4],
+                                        months.get(end[5:7], ""),
+                                        end[8:10].lstrip("0"),
                                     ],
                                 )
                             ),
                         )
                     )
-            elif date.get("begin"):
+            elif begin:
                 dates_display.append(
                     " ".join(
                         filter(
                             None,
                             [
-                                date.get("begin")[:4],
-                                months.get(date.get("begin")[5:7], ""),
-                                date.get("begin")[8:10].lstrip("0"),
+                                begin[:4],
+                                months.get(begin[5:7], ""),
+                                begin[8:10].lstrip("0"),
                             ],
                         )
                     )
                 )
-            else:
-                dates_display.append(date["expression"])
+            elif expression:
+                dates_display.append(expression)
     return dates_display
 
 
 def format_archival_object_extents_display(archival_object):
     extents_display = []
-    for extent in archival_object["extents"]:
-        extents_display.append(f"{extent['number'].strip()} {extent['extent_type']}")
+    for extent in archival_object.get("extents", []):
+        number = str(extent.get("number", "")).strip()
+        extent_type = extent.get("extent_type", "")
+        extents_display.append(f"{number} {extent_type}".strip())
     return extents_display
 
 
 def format_archival_object_subjects_display(archival_object):
     subjects = {}
-    for subject in archival_object["subjects"]:
-        if subject["_resolved"]["publish"]:
-            subjects[subject["ref"]] = subject["_resolved"]["title"]
+    for subject in archival_object.get("subjects", []):
+        resolved = subject.get("_resolved", {})
+        if resolved.get("publish"):
+            subjects[subject.get("ref", "")] = resolved.get("title", "")
     # TODO check for subjects higher up in the hierarchy
-    for linked_agent in archival_object["linked_agents"]:
-        if linked_agent["_resolved"]["publish"] and linked_agent["role"] == "subject":
-            sort_name = linked_agent["_resolved"]["display_name"]["sort_name"]
-            if linked_agent.get("relator"):
-                sort_name += f" [{LINKED_AGENT_ARCHIVAL_RECORD_RELATORS[linked_agent['relator']]}]"
-            subjects[linked_agent["ref"]] = sort_name
+    for linked_agent in archival_object.get("linked_agents", []):
+        resolved = linked_agent.get("_resolved", {})
+        if resolved.get("publish") and linked_agent.get("role") == "subject":
+            sort_name = resolved.get("display_name", {}).get("sort_name", "")
+            relator = linked_agent.get("relator")
+            if relator:
+                relator_label = LINKED_AGENT_ARCHIVAL_RECORD_RELATORS.get(relator, relator)
+                sort_name += f" [{relator_label}]"
+            subjects[linked_agent.get("ref", "")] = sort_name
     return subjects
 
 
@@ -756,35 +766,28 @@ def format_archival_object_notes_display(archival_object):
         "userestrict": "Conditions Governing Use",
     }
     notes_display = {}
-    for note in archival_object["notes"]:
-        if note["publish"]:
-            if note["jsonmodel_type"] == "note_singlepart":
-                if note["type"] in singlepart_note_types.keys():
-                    if note.get("label"):
-                        note_label = note["label"]
-                    else:
-                        note_label = singlepart_note_types[note["type"]]
-                    if note_label not in notes_display.keys():
+    for note in archival_object.get("notes", []):
+        if note.get("publish"):
+            note_type = note.get("jsonmodel_type", "")
+            note_key = note.get("type", "")
+            if note_type == "note_singlepart":
+                if note_key in singlepart_note_types:
+                    note_label = note.get("label") or singlepart_note_types[note_key]
+                    if note_label not in notes_display:
                         notes_display[note_label] = []
-                    for content in note["content"]:
-                        # group all same-type or -label notes together
+                    for content in note.get("content", []):
                         notes_display[note_label].append(content)
-            elif note["jsonmodel_type"] == "note_multipart":
-                if note["type"] in multipart_note_types.keys():
-                    if note.get("label"):
-                        note_label = note["label"]
-                    else:
-                        note_label = multipart_note_types[note["type"]]
-                    if note_label not in notes_display.keys():
-                        # NOTE this could end up remaining empty
+            elif note_type == "note_multipart":
+                if note_key in multipart_note_types:
+                    note_label = note.get("label") or multipart_note_types[note_key]
+                    if note_label not in notes_display:
                         notes_display[note_label] = []
-                    for subnote in note["subnotes"]:
+                    for subnote in note.get("subnotes", []):
                         if (
-                            subnote["publish"]
-                            and subnote["jsonmodel_type"] == "note_text"
+                            subnote.get("publish")
+                            and subnote.get("jsonmodel_type") == "note_text"
                         ):
-                            # group all same-type or -label notes together
-                            notes_display[note_label].append(subnote["content"])
+                            notes_display[note_label].append(subnote.get("content", ""))
                         # TODO elif subnote["jsonmodel_type"] == "note_chronology":
                         # TODO elif subnote["jsonmodel_type"] == "note_definedlist":
                         # TODO elif subnote["jsonmodel_type"] == "note_orderedlist":
