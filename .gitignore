@@ -10,7 +10,7 @@ wheels/
 .venv
 
 # Secrets and configuration
-settings.ini
+settings*.ini
 
 # Logs
 *.log
