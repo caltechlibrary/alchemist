@@ -21,7 +21,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.40" },
-    { name = "cascflow", git = "https://github.com/caltechlibrary/cascflow?branch=main" },
+    { name = "cascflow", git = "https://github.com/caltechlibrary/cascflow?rev=v3.0.4" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "python-decouple-typed", specifier = ">=3.11.0" },
 ]
@@ -104,8 +104,8 @@ wheels = [
 
 [[package]]
 name = "cascflow"
-version = "3.0.3"
-source = { git = "https://github.com/caltechlibrary/cascflow?branch=main#c70b22a9f65f21fc5e2623b66512f047a85cc00a" }
+version = "3.0.4"
+source = { git = "https://github.com/caltechlibrary/cascflow?rev=v3.0.4#e3439faba77252ceff10aacf773906e0e824dc17" }
 dependencies = [
     { name = "archivessnake" },
     { name = "backoff" },

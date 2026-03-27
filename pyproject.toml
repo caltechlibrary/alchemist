@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-cascflow = { git = "https://github.com/caltechlibrary/cascflow", branch = "main" }
+cascflow = { git = "https://github.com/caltechlibrary/cascflow", rev = "v3.0.4" }
 
 [dependency-groups]
 dev = [
