@@ -64,21 +64,10 @@ execute_parser.add_argument(
     help="String. Supply a volume name or an identifier, depending on the target.",
 )
 
-args = parser.parse_args()
-
-# set up settings path and logging
-if args.settings is not None:
-    settings_path = Path(args.settings).expanduser().resolve()
-else:
-    settings_path = Path(__file__).parent.joinpath("settings.ini").resolve()
-if not settings_path.exists():
-    raise FileNotFoundError(f"Settings file not found: {settings_path}")
-# configure cascflow to use our settings.ini file
-config = Config(RepositoryIni(settings_path))
-cascflow.set_config(config)
-
-cascflow.setup_logging(str(settings_path))
+args = None
+config = cascflow.config
 logger = logging.getLogger("alchemist")
+
 
 LINKED_AGENT_ARCHIVAL_RECORD_RELATORS = {
     "abr": "Abridger",
@@ -578,7 +567,9 @@ def create_digital_object_file_versions(
 
 
 def publish_archival_object_access_files(
-    build_directory: tempfile.TemporaryDirectory[str], archival_object: dict, arrangement: dict
+    build_directory: tempfile.TemporaryDirectory[str],
+    archival_object: dict,
+    arrangement: dict,
 ) -> None:
     archival_object_access_path = "/".join(
         [
@@ -803,7 +794,10 @@ def format_archival_object_notes_display(archival_object):
 
 
 def generate_archival_object_page(
-    build_directory: tempfile.TemporaryDirectory[str], archival_object: dict, arrangement: dict, mimetype: str
+    build_directory: tempfile.TemporaryDirectory[str],
+    archival_object: dict,
+    arrangement: dict,
+    mimetype: str,
 ) -> None:
     try:
         logger.debug(f"🐞 BUILD_DIRECTORY.NAME: {build_directory.name}")
@@ -1071,7 +1065,10 @@ def generate_iiif_manifest(
 
 
 def create_pyramid_tiff(
-    build_directory: tempfile.TemporaryDirectory[str], filepath: Path, archival_object: dict, arrangement: dict
+    build_directory: tempfile.TemporaryDirectory[str],
+    filepath: Path,
+    archival_object: dict,
+    arrangement: dict,
 ) -> None:
     try:
         # NOTE vips has problems with JP2 source images
@@ -1149,7 +1146,10 @@ def create_pyramid_tiff(
 
 
 def conditional_derivative_file_processing(
-    build_directory: tempfile.TemporaryDirectory[str], filepath: Path, archival_object: dict, arrangement: dict
+    build_directory: tempfile.TemporaryDirectory[str],
+    filepath: Path,
+    archival_object: dict,
+    arrangement: dict,
 ) -> None:
     type, encoding = mimetypes.guess_type(filepath.as_posix())
 
@@ -1303,7 +1303,8 @@ def is_archival_object_eligible_for_publication(
     ## check for existing digital_object["file_versions"]
     elif archival_object.get("instances"):
         digital_object_instances = [
-            instance for instance in archival_object["instances"]
+            instance
+            for instance in archival_object["instances"]
             if "digital_object" in instance.keys()
         ]
         digital_object_count = len(digital_object_instances)
@@ -1397,7 +1398,9 @@ def validate_digital_files_for_publication(
                         unsupported_files.append(child)
     ## messaging
     if eligible_archival_objects:
-        logger.info(f"{eligible_archival_objects[0]}{', …' if len(eligible_archival_objects) > 1 else ''}")
+        logger.info(
+            f"{eligible_archival_objects[0]}{', …' if len(eligible_archival_objects) > 1 else ''}"
+        )
         for eligible_archival_object in eligible_archival_objects:
             logger.info(f"🉑 {eligible_archival_object}")
             if sequence_indicators.get(eligible_archival_object):
@@ -1438,8 +1441,27 @@ def validate_digital_files_for_publication(
 
 
 def main():
+    global args, config, logger
+    args = parser.parse_args()
+
+    # set up settings path and logging
+    if args.settings is not None:
+        settings_path = Path(args.settings).expanduser().resolve()
+    else:
+        settings_path = Path(__file__).parent.joinpath("settings.ini").resolve()
+    if not settings_path.exists():
+        raise FileNotFoundError(f"Settings file not found: {settings_path}")
+    # configure cascflow to use our settings.ini file
+    config_instance = Config(RepositoryIni(settings_path))
+    cascflow.set_config(config_instance)
+    # reassign module-level config to use the cascflow config instance with our settings
+    config = cascflow.config  # Use cascflow.config everywhere as config()
+
+    cascflow.setup_logging(str(settings_path))
+    logger = logging.getLogger("alchemist")
+
     # handle the commands
-    logger.debug(f"🐞 TARGET: {args.target}")
+    logger.debug(f"🐞 TARGET: {getattr(args, 'target', None)}")
     if args.command == "validate":
         if args.target == "metadata":
             logger.info(args.context)
