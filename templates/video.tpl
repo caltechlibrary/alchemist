@@ -1,7 +1,7 @@
-{##}
-{# this is a Jinja template #}
-{##}
 <!DOCTYPE html>
+{#-#}
+{#- this is a Jinja template #}
+{#-#}
 <html lang="en">
   <head>
     <meta charset="utf-8">
