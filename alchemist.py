@@ -1455,7 +1455,7 @@ def main():
     if not settings_path.exists():
         raise FileNotFoundError(f"Settings file not found: {settings_path}")
     # configure cascflow to use our settings.ini file
-    config_instance = Config(RepositoryIni(settings_path))
+    config_instance = Config(RepositoryIni(settings_path.as_posix()))
     cascflow.set_config(config_instance)
     # reassign module-level config to use the cascflow config instance with our settings
     config = cascflow.config  # Use cascflow.config everywhere as config()
