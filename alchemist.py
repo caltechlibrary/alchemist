@@ -509,7 +509,7 @@ def create_digital_object_file_versions(
             archival_object["component_id"],
         ]
     )
-    logger.debug(f"🐞 ARCHIVAL_OBJECT_PAGE_URL: {archival_object_page_url}")
+    logger.info(f"✨ ARCHIVAL OBJECT PAGE URL: {archival_object_page_url}")
 
     filepaths = [
         f.absolute()
@@ -889,8 +889,8 @@ def generate_archival_object_page(
                     rights=RIGHTS_NOTICE_HTML,
                 )
             )
-        logger.info(
-            f"✨ ARCHIVAL OBJECT PAGE FILE GENERATED: {archival_object_page_file}"
+        logger.debug(
+            f"🐞 ARCHIVAL OBJECT PAGE FILE GENERATED: {archival_object_page_file}"
         )
     except Exception as e:
         logger.exception(e)
@@ -1069,7 +1069,7 @@ def generate_iiif_manifest(
     manifest_file.parent.mkdir(parents=True, exist_ok=True)
     with open(manifest_file, "w") as f:
         f.write(json.dumps(manifest, indent=4))
-    logger.info(f"✨ MANIFEST FILE GENERATED: {manifest_file}")
+    logger.debug(f"🐞 MANIFEST FILE GENERATED: {manifest_file}")
 
 
 def create_pyramid_tiff(
@@ -1251,7 +1251,7 @@ def archival_object_level_processing(
     archival_object: dict,
     arrangement: dict,
 ) -> None:
-    logger.info(f"ℹ️  {archival_object['component_id']}")
+    logger.debug(f"🐞 {archival_object['component_id']}")
     # TODO consider conditions for identifiying non-image file types
     mimetype = ""
     if filepaths and len(filepaths) == 1:
