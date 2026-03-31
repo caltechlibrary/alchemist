@@ -34,15 +34,67 @@ def test_format_archival_object_notes_display_handles_empty():
     assert result == {}
 
 
-def test_has_sequence_indicator_true():
-    # The function expects at least three underscore-separated components, last must be 3 digits or 3 digits + r/v
-    assert alchemist.has_sequence_indicator("foo_001_001") is True
-    assert alchemist.has_sequence_indicator("foo_001_001r") is True
-    assert alchemist.has_sequence_indicator("foo_001_001v") is True
+def test_has_valid_sequence_indicators():
+    # Contiguous, base only
+    files = [
+        "foo_001_01.tif",
+        "foo_001_02.tif",
+        "foo_001_03.tif",
+    ]
+    assert alchemist.has_valid_sequence_indicators(files) is True
 
+    # Contiguous, r/v only, both present for each
+    files = [
+        "foo_001_01r.tif",
+        "foo_001_01v.tif",
+        "foo_001_02r.tif",
+        "foo_001_02v.tif",
+    ]
+    assert alchemist.has_valid_sequence_indicators(files) is True
 
-def test_has_sequence_indicator_false():
-    assert alchemist.has_sequence_indicator("file_no_seq") is False
+    # Not contiguous (gap)
+    files = [
+        "foo_001_01.tif",
+        "foo_001_03.tif",
+    ]
+    assert alchemist.has_valid_sequence_indicators(files) is False
+
+    # r/v present but not both for a number
+    files = [
+        "foo_001_01r.tif",
+        "foo_001_02v.tif",
+    ]
+    assert alchemist.has_valid_sequence_indicators(files) is False
+
+    # r/v present and base present for a number
+    files = [
+        "foo_001_01r.tif",
+        "foo_001_01v.tif",
+        "foo_001_01.tif",
+    ]
+    assert alchemist.has_valid_sequence_indicators(files) is False
+
+    # r/v for one, base for another (should be fine)
+    files = [
+        "foo_001_01r.tif",
+        "foo_001_01v.tif",
+        "foo_001_02.tif",
+    ]
+    assert alchemist.has_valid_sequence_indicators(files) is True
+
+    # Not enough digits
+    files = [
+        "foo_001_1.tif",
+        "foo_001_2.tif",
+    ]
+    assert alchemist.has_valid_sequence_indicators(files) is False
+
+    # Not enough components
+    files = [
+        "foo01.tif",
+        "foo02.tif",
+    ]
+    assert alchemist.has_valid_sequence_indicators(files) is False
 
 
 def test_is_archival_object_eligible_for_publication_true():
@@ -64,7 +116,9 @@ def test_is_archival_object_eligible_for_publication_false():
         "title": "Test Title",
         "uri": "test-uri",
     }
-    assert alchemist.is_archival_object_eligible_for_publication(ao, "pipeline") is False
+    assert (
+        alchemist.is_archival_object_eligible_for_publication(ao, "pipeline") is False
+    )
 
 
 def test_is_publication_file_supported_true():

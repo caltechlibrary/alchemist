@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import time
 
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -610,7 +611,9 @@ def format_archival_object_creators_display(archival_object):
             sort_name = resolved.get("display_name", {}).get("sort_name", "")
             relator = linked_agent.get("relator")
             if relator:
-                relator_label = LINKED_AGENT_ARCHIVAL_RECORD_RELATORS.get(relator, relator)
+                relator_label = LINKED_AGENT_ARCHIVAL_RECORD_RELATORS.get(
+                    relator, relator
+                )
                 sort_name += f" [{relator_label}]"
             creators[linked_agent.get("ref", "")] = sort_name
     return creators
@@ -728,7 +731,9 @@ def format_archival_object_subjects_display(archival_object):
             sort_name = resolved.get("display_name", {}).get("sort_name", "")
             relator = linked_agent.get("relator")
             if relator:
-                relator_label = LINKED_AGENT_ARCHIVAL_RECORD_RELATORS.get(relator, relator)
+                relator_label = LINKED_AGENT_ARCHIVAL_RECORD_RELATORS.get(
+                    relator, relator
+                )
                 sort_name += f" [{relator_label}]"
             subjects[linked_agent.get("ref", "")] = sort_name
     return subjects
@@ -1034,10 +1039,10 @@ def generate_iiif_manifest(
     # Update sequence indicators and canvas metadata if we have filepaths.
     if filepaths:
         manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
-        sequence_indicators = {archival_object["component_id"]: True}
-        for filepath in filepaths:
-            if not has_sequence_indicator(filepath.stem):
-                sequence_indicators.update({archival_object["component_id"]: False})
+        # Check all filepaths for valid sequence indicators.
+        sequence_indicators = {
+            archival_object["component_id"]: has_valid_sequence_indicators(filepaths)
+        }
         with ProcessPoolExecutor() as executor:
             futures = [
                 executor.submit(
@@ -1269,19 +1274,63 @@ def archival_object_level_processing(
         )
 
 
-def has_sequence_indicator(stem: str) -> bool:
-    # NOTE this is a very basic check; it will not catch all cases
-    # TODO add more robust checks for sequence indicators
-    # checking for the patterns like CollectionID_001_01_001, CollectionID_001_01_001r, or CollectionID_001_01_001v
+def _parse_indicator(stem: str) -> tuple[int, str | None] | None:
+    """
+    Parses the sequence indicator from a filename stem.
+    Returns (numeric_part, suffix) where suffix is 'r', 'v', or None,
+    or returns None if the stem is invalid.
+    """
     components = stem.split("_")
-    if (
-        len(components) >= 3
-        and components[-1][:3].isdigit()
-        and (len(components[-1]) == 3 or components[-1][3:] in {"r", "v"})
-    ):
-        return True
+    if len(components) < 2:
+        return None
+    last = components[-1]
+    # Use tuple form of endswith to check for either suffix in one call
+    if last.endswith(("r", "v")):
+        digits, rv = last[:-1], last[-1]
     else:
+        digits, rv = last, None
+    if not (digits.isdigit() and len(digits) >= 2):
+        return None
+    return (int(digits), rv)
+
+
+def has_valid_sequence_indicators(filepaths) -> bool:
+    """
+    Returns True if all filepaths have a valid sequence indicator (digits,
+    optionally followed by 'r' or 'v'), and the numeric part forms a
+    contiguous sequence. Recto/verso logic: if 'r' or 'v' exists for a
+    number, both must exist and no bare number may exist for that position.
+    Accepts a list of Path objects or strings.
+    """
+    # This function should only be called with a non-empty list; raise
+    # explicitly rather than letting sorted() or indexing fail silently later
+    if not filepaths:
+        raise ValueError("filepaths must not be empty")
+
+    # Parse and validate each stem
+    indicators = []
+    for fp in filepaths:
+        indicator = _parse_indicator(Path(fp).stem)
+        if indicator is None:
+            return False  # Invalid indicator found, return early
+        indicators.append(indicator)
+
+    # Group suffixes ('r', 'v', or None) by their numeric part,
+    # e.g. [('2', 'r'), ('2', 'v'), ('3', None)] -> {2: {'r', 'v'}, 3: {None}}
+    seq_map: defaultdict[int, set] = defaultdict(set)
+    for num, rv in indicators:
+        seq_map[num].add(rv)
+
+    # Check for a contiguous sequence: numbers must form an unbroken range,
+    # e.g. [1, 2, 3] is valid but [1, 3] is not
+    nums = sorted(seq_map)
+    if nums != list(range(nums[0], nums[-1] + 1)):
         return False
+
+    # Each number must be in exactly one of two valid states:
+    # - {'r', 'v'}: both recto and verso present, no bare number
+    # - {None}:     bare number only, no recto/verso suffixes
+    return all(rv_set == {"r", "v"} or rv_set == {None} for rv_set in seq_map.values())
 
 
 def is_archival_object_eligible_for_publication(
@@ -1391,14 +1440,12 @@ def validate_digital_files_for_publication(
             if not is_publication_file_supported(entry):
                 unsupported_files.append(entry)
         if entry.is_dir():
-            sequence_indicators.update({entry.stem: True})
-            for child in entry.iterdir():
-                if child.is_file():
-                    if not has_sequence_indicator(child.stem):
-                        sequence_indicators.update({entry.stem: False})
-                    ## check for file types that are unsupported in publication
-                    if not is_publication_file_supported(child):
-                        unsupported_files.append(child)
+            # Check all files in the directory for valid sequence indicators.
+            children = [child for child in entry.iterdir() if child.is_file()]
+            sequence_indicators[entry.stem] = has_valid_sequence_indicators(children)
+            for child in children:
+                if not is_publication_file_supported(child):
+                    unsupported_files.append(child)
     ## messaging
     if eligible_archival_objects:
         logger.info(
@@ -1407,9 +1454,9 @@ def validate_digital_files_for_publication(
         for eligible_archival_object in eligible_archival_objects:
             logger.info(f"🉑 {eligible_archival_object}")
             if sequence_indicators.get(eligible_archival_object):
-                logger.info("🔢 CANVAS LABELS WILL USE SEQUENTIAL INDICATORS")
+                logger.info("🔢 THUMBNAILS WILL BE LABELED WITH SEQUENTIAL INDICATORS")
             else:
-                logger.info("🔠 CANVAS LABELS WILL USE FILENAME STEMS")
+                logger.info("🔠 THUMBNAILS WILL BE LABELED WITH FULL FILENAMES")
         logger.info(f"🗂 ARCHIVAL OBJECT COUNT: {len(eligible_archival_objects)}")
         logger.info(f"📄 FILE COUNT: {file_count}")
     ## validation and messaging
