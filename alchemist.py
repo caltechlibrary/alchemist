@@ -1426,6 +1426,9 @@ def validate_digital_files_for_publication(
     sequence_indicators = {}
     # get the cached archival object data from validation_results
     cached_archival_objects = validation_results.get("eligible_archival_objects", {})
+    logger.info(
+        f"{next(iter(cached_archival_objects))}{', …' if len(cached_archival_objects) > 1 else ''}"
+    )
     ## iterate over the first level of entries in the source directory
     for entry in source_path.iterdir():
         ## validate the entry (file or directory) using cached data
@@ -1448,9 +1451,6 @@ def validate_digital_files_for_publication(
                     unsupported_files.append(child)
     ## messaging
     if eligible_archival_objects:
-        logger.info(
-            f"{eligible_archival_objects[0]}{', …' if len(eligible_archival_objects) > 1 else ''}"
-        )
         for eligible_archival_object in eligible_archival_objects:
             logger.info(f"🉑 {eligible_archival_object}")
             if sequence_indicators.get(eligible_archival_object):
