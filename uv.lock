@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -7,6 +7,7 @@ name = "alchemist"
 version = "3.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "arkminter" },
     { name = "boto3" },
     { name = "cascflow" },
     { name = "jinja2" },
@@ -22,8 +23,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "arkminter", editable = "../arkminter" },
     { name = "boto3" },
-    { name = "cascflow", git = "https://github.com/caltechlibrary/cascflow?rev=v4.0.0" },
+    { name = "cascflow", editable = "../cascflow" },
     { name = "jinja2" },
     { name = "python-decouple" },
 ]
@@ -33,6 +35,27 @@ dev = [
     { name = "decouple-types" },
     { name = "pytest" },
     { name = "ruff" },
+]
+
+[[package]]
+name = "arkminter"
+version = "0.1.0"
+source = { editable = "../arkminter" }
+dependencies = [
+    { name = "boto3" },
+    { name = "python-decouple" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3" },
+    { name = "python-decouple" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "decouple-types" },
+    { name = "pytest" },
 ]
 
 [[package]]
@@ -75,13 +98,28 @@ wheels = [
 [[package]]
 name = "cascflow"
 version = "4.0.0"
-source = { git = "https://github.com/caltechlibrary/cascflow?rev=v4.0.0#c0a64957681145e39b049a4f4cad917b305368a5" }
+source = { editable = "../cascflow" }
 dependencies = [
     { name = "backoff" },
     { name = "boto3" },
     { name = "python-decouple" },
     { name = "requests" },
     { name = "urllib3" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "backoff" },
+    { name = "boto3" },
+    { name = "python-decouple" },
+    { name = "requests" },
+    { name = "urllib3" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "decouple-types" },
+    { name = "ruff" },
 ]
 
 [[package]]

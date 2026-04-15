@@ -6,6 +6,7 @@ import datetime
 import json
 import logging
 import mimetypes
+import re
 import shutil
 import subprocess
 import tempfile
@@ -15,12 +16,14 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import boto3  # pypi: boto3
 import jinja2  # pypi: Jinja2
 
 from decouple import Config, RepositoryIni  # pypi: python-decouple-typed
 
+import arkminter
 import cascflow
 
 parser = argparse.ArgumentParser(
@@ -396,18 +399,18 @@ def create_canvas_metadata(
     canvas_id = "/".join(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
-            config("COMMON_PATH_PREFIX"),
-            arrangement["collection_id"],
-            archival_object["component_id"],
+            # TODO handle potential ARK Qualifier upstream
+            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
+            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
             "canvas",
             filepath.stem,
         ]
     )
     escaped_identifier = "/".join(
         [
-            config("COMMON_PATH_PREFIX"),
-            arrangement["collection_id"],
-            archival_object["component_id"],
+            # TODO handle potential ARK Qualifier upstream
+            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
+            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
             filepath.stem,
         ]
     )
@@ -453,19 +456,17 @@ def get_thumbnail_url(
         return "/".join(
             [
                 config("ALCHEMIST_BASE_URL").rstrip("/"),
-                config("COMMON_PATH_PREFIX"),
-                arrangement["collection_id"],
-                archival_object["component_id"],
+                # TODO handle potential ARK Qualifier upstream
+                archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
+                archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
                 "thumbnail.webp",
             ]
         )
     thumbnail_id = "/".join(
         [
-            config("COMMON_PATH_PREFIX"),
-            arrangement["collection_id"],
-            archival_object[
-                "component_id"
-            ],  # TODO component_id is redundant for single file archival objects
+            # TODO handle potential ARK Qualifier upstream
+            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
+            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
             source_file.stem,
         ]
     )
@@ -504,9 +505,9 @@ def create_digital_object_file_versions(
     archival_object_page_url = "/".join(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
-            config("COMMON_PATH_PREFIX"),
-            arrangement["collection_id"],
-            archival_object["component_id"],
+            # TODO handle potential ARK Qualifier upstream
+            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
+            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
         ]
     )
     logger.info(f"✨ ARCHIVAL OBJECT PAGE URL: {archival_object_page_url}")
@@ -579,13 +580,15 @@ def publish_archival_object_access_files(
             archival_object["component_id"],
         ]
     )
+    # TODO handle potential ARK Qualifier upstream
+    our_ark = f"{archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1]}/{archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2]}"
     try:
         s5cmd_sync = subprocess.run(
             [
                 config("S5CMD_CMD"),
                 "sync",
                 f"{build_directory.name}/{archival_object_access_path}/*",
-                f"s3://{config('S3_BUCKET')}/{archival_object_access_path}/",
+                f"s3://{config('S3_BUCKET')}/{our_ark}/",
             ],
             env={
                 "AWS_ACCESS_KEY_ID": config("AWS_ACCESS_KEY_ID"),
@@ -823,12 +826,15 @@ def generate_archival_object_page(
             )
         else:
             template = environment.get_template("archival_object.tpl")
+            # TODO Q: should this be a resolver link instead of a direct link to the manifest file?
+            # Leaning towards resolver link, but we must ensure Suffix Passthrough on the resolver,
+            # and that our external_ark_url does not have a Qualifier.
             iiif_manifest_url = "/".join(
                 [
                     config("ALCHEMIST_BASE_URL").rstrip("/"),
-                    config("COMMON_PATH_PREFIX"),
-                    arrangement["collection_id"],
-                    archival_object["component_id"],
+                    # TODO handle potential ARK Qualifier upstream
+                    archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
+                    archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
                     "manifest.json",
                 ]
             )
@@ -986,29 +992,31 @@ def generate_iiif_manifest(
                 attribution = note_contents
     # Use an existing manifiest file if we are only updating metadata and have no filepaths.
     if not filepaths:
-        manifest_key = (
-            Path(config("COMMON_PATH_PREFIX"))
-            .joinpath(
-                arrangement["collection_id"],
-                archival_object["component_id"],
+        manifest_key = "/".join(
+            [
+                # TODO handle potential ARK Qualifier upstream
+                archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
+                archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
                 "manifest.json",
-            )
-            .as_posix()
+            ]
         )
         response = cascflow.s3_get_object(config("S3_BUCKET"), manifest_key)
         if response is None:
             raise FileNotFoundError(f"❌ MANIFEST NOT FOUND IN S3: {manifest_key}")
         manifest = json.loads(response["Body"].read())
     else:
+        # TODO manifest @id should be the resolver link, not a direct link to
+        # the manifest file; ensure Suffix Passthrough on resolver and that our
+        # external_ark_url does not have a Qualifier
         manifest: dict[str, Any] = {
             "@context": "http://iiif.io/api/presentation/2/context.json",
             "@type": "sc:Manifest",
             "@id": "/".join(
                 [
                     config("ALCHEMIST_BASE_URL").rstrip("/"),
-                    config("COMMON_PATH_PREFIX"),
-                    arrangement["collection_id"],
-                    archival_object["component_id"],
+                    # TODO handle potential ARK Qualifier upstream
+                    archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
+                    archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
                     "manifest.json",
                 ]
             ),
@@ -1333,6 +1341,69 @@ def has_valid_sequence_indicators(filepaths) -> bool:
     return all(rv_set == {"r", "v"} or rv_set == {None} for rv_set in seq_map.values())
 
 
+def get_existing_our_ark(archival_object: dict) -> str | None:
+    """Return our ARK from external_ark_url if configured and valid."""
+    external_ark_url = str(archival_object.get("external_ark_url", "")).strip()
+    if not external_ark_url:
+        return None
+
+    our_naan = str(config("OUR_NAAN", default="")).strip()
+    if not our_naan:
+        logger.warning(
+            "⚠️ OUR_NAAN IS NOT CONFIGURED; SKIPPING external_ark_url VALIDATION: %s",
+            archival_object.get("component_id", ""),
+        )
+        return None
+
+    decoded = unquote(external_ark_url)
+    # Match both ark:/NAAN/name and ark:NAAN/name forms.
+    # TODO determine if existing ARK contains a Qualifier after the Assigned Name
+    match = re.search(r"ark:(?:/)?([0-9A-Za-z]+)/([^?#/]+)", decoded)
+    if not match:
+        logger.warning(
+            "⚠️ INVALID external_ark_url FORMAT: %s (%s)",
+            archival_object.get("component_id", ""),
+            external_ark_url,
+        )
+        return None
+
+    existing_naan = match.group(1)
+    if existing_naan.lower() != our_naan.lower():
+        logger.warning(
+            "⚠️ external_ark_url HAS A DIFFERENT NAAN THAN OUR_NAAN (%s): %s (%s)",
+            existing_naan,
+            archival_object.get("component_id", ""),
+            external_ark_url,
+        )
+        return None
+
+    existing_our_ark = f"ark:{existing_naan}/{match.group(2)}"
+    logger.info(
+        "☑️ OUR ARK FOUND IN external_ark_url: %s (%s)",
+        existing_our_ark,
+        archival_object.get("component_id", ""),
+    )
+    return existing_our_ark
+
+
+def update_external_ark_url(archival_object: dict) -> None:
+    """POST updated archival_object if external_ark_url has changed."""
+    archivesspace_archival_object = cascflow.archivesspace_get(
+        archival_object["uri"]
+    ).json()
+    if archival_object.get("external_ark_url") != archivesspace_archival_object.get(
+        "external_ark_url"
+    ):
+        logger.info(
+            "✨ UPDATE external_ark_url VALUE IN %s FROM %s TO %s",
+            archival_object.get("component_id", ""),
+            archivesspace_archival_object.get("external_ark_url", ""),
+            archival_object.get("external_ark_url", ""),
+        )
+        cascflow.archivesspace_post(archival_object["uri"], archival_object)
+    return
+
+
 def is_archival_object_eligible_for_publication(
     archival_object: dict, pipeline: str
 ) -> bool:
@@ -1536,6 +1607,26 @@ def main():
                 publish_archival_object_access_files(
                     build_directory, archival_object, arrangement
                 )
+                # in the case of a metadata-only update, we still want to mint
+                # an ARK if one does not exist and update the archival object
+                # records with the external ARK; if one does exist, we want to
+                # update and replace the ARK info.jsonld and index.html redirect
+                # objects with current metadata and target URLs
+                # first condition:
+                # do we have external_ark_url?
+                # YES
+                #   TOOO should we validate the syntax? http or https? ark:/ or ark:? naan?
+                #   extract ark from external_ark_url
+                #   arkminter.format_metadata() with the existing ark and updated metadata
+                #   arkminter.put_objects() to update info.jsonld and index.html
+                #   do we need to update the target URL for the index.html redirect object?
+                #   do we need to create/update the Persistent-URL File URI entry?
+                #   do we need to update the Web-Access File URI entry to use an ARK path?
+                #       digital.example.edu/ark:NAAN/NAME
+                #       instead of digital.example.edu/collections/COLLECTION/COMPONENT_ID
+                # NO
+                #   mint new ARK
+                #   create/update File URIs to use ARK paths
             if validation_results.get("identifier_level") == "resource":
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # Invalidate everything under the resource path component.
@@ -1562,7 +1653,54 @@ def main():
                 archival_object,
                 arrangement,
             ) in cascflow.execute(args.context, batch_set_id, args.target):
-                # process each result as it is yielded
+                """process each archival_object result as it is yielded"""
+                # validate, update, or mint ARK as needed
+                existing_our_ark = get_existing_our_ark(archival_object)
+                if existing_our_ark:
+                    # TODO handle multiple creators and dates
+                    metadata = json.loads(
+                        arkminter.format_metadata(
+                            nma=config("ARK_NMA"),
+                            ark=existing_our_ark,
+                            title=archival_object["title"],
+                            creator=archival_object.get("linked_agents", [{}])[0].get(
+                                "title", ""
+                            ),
+                            date=archival_object.get("dates", [{}])[0].get("label", ""),
+                        )
+                    )
+                    s3_client = boto3.client(
+                        "s3",
+                        aws_access_key_id=config("AWS_ACCESS_KEY_ID"),
+                        aws_secret_access_key=config("AWS_SECRET_ACCESS_KEY"),
+                    )
+                    logger.debug("🐞 CONNECTION TO S3 ESTABLISHED")
+                    arkminter.put_objects(
+                        bucket_name=config("RESOLVER_BUCKET"),
+                        ark=existing_our_ark,
+                        redirect_location=f"{config('ALCHEMIST_BASE_URL').rstrip('/')}/{existing_our_ark}",
+                        metadata=metadata,
+                        s3_client=s3_client,
+                    )
+                    archival_object["external_ark_url"] = (
+                        f"https://{config('OUR_NMA')}/{existing_our_ark}"
+                    )
+                else:
+                    # TODO handle multiple creators and dates
+                    minted_ark = arkminter.mint_ark(
+                        bucket_name=config("RESOLVER_BUCKET"),
+                        redirect_domain=config("ALCHEMIST_BASE_URL"),
+                        nma=config("OUR_NMA"),
+                        naan=config("OUR_NAAN"),
+                        title=archival_object["title"],
+                        creator=archival_object.get("linked_agents", [{}])[0].get(
+                            "title", ""
+                        ),
+                        date=archival_object.get("dates", [{}])[0].get("label", ""),
+                    )
+                    archival_object["external_ark_url"] = (
+                        f"https://{config('OUR_NMA')}/{minted_ark}"
+                    )
                 archival_object_level_processing(
                     build_directory, filepaths, archival_object, arrangement
                 )
@@ -1572,6 +1710,7 @@ def main():
                 create_digital_object_file_versions(
                     build_directory, filepaths, archival_object, arrangement
                 )
+                update_external_ark_url(archival_object)
                 cascflow.move_to_stage_3(stage_2_path_obj, batch_directory)
                 if args.target == "files":
                     # Invalidate the paths for the updated files.
