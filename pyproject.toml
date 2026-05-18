@@ -21,6 +21,7 @@ cascflow = { path = "../cascflow", editable = true }
 
 [dependency-groups]
 dev = [
+    "aws-cdk-lib",
     "decouple-types",
     "pytest",
     "ruff",
