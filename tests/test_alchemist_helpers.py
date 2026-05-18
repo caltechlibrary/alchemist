@@ -1,4 +1,5 @@
 import json
+import tempfile
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -90,7 +91,7 @@ def test_has_valid_sequence_indicators():
         "foo_001_1.tif",
         "foo_001_2.tif",
     ]
-    assert alchemist.has_valid_sequence_indicators(files) is False
+    assert alchemist.has_valid_sequence_indicators(files) is True
 
     # Not enough components
     files = [
@@ -112,8 +113,8 @@ def test_is_archival_object_eligible_for_publication_true():
 
 
 def test_is_archival_object_eligible_for_publication_false():
-    alchemist.config = (
-        lambda key, **kwargs: "https://archivesspace.example.edu"
+    alchemist.config = lambda key, **kwargs: (
+        "https://archivesspace.example.edu"
         if key == "ARCHIVESSPACE_STAFF_URL"
         else kwargs.get("default")
     )
@@ -234,7 +235,7 @@ def test_update_external_ark_url_skips_post_when_unchanged(monkeypatch):
 
 
 def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
-    build_directory = SimpleNamespace(name="/tmp/build")
+    build_directory = tempfile.TemporaryDirectory()
     archival_object = {
         "component_id": "aspace_1",
         "external_ark_url": "https://digital.example.edu/ark:99999/abc123x",
@@ -246,10 +247,9 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
         alchemist,
         "config",
         lambda key, **kwargs: {
-            "COMMON_PATH_PREFIX": "collections",
             "OUR_NMA": "digital.example.edu",
             "S5CMD_CMD": "s5cmd",
-            "S3_BUCKET": "bucket-name",
+            "ALCHEMIST_BUCKET": "bucket-name",
             "AWS_ACCESS_KEY_ID": "access",
             "AWS_SECRET_ACCESS_KEY": "secret",
         }.get(key, kwargs.get("default")),
@@ -270,7 +270,7 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
     assert command == [
         "s5cmd",
         "sync",
-        "/tmp/build/collections/collection_1/aspace_1/*",
+        build_directory.name + "/collection_1/aspace_1/*",
         "s3://bucket-name/ark:99999/abc123x/",
     ]
     assert kwargs["env"]["AWS_ACCESS_KEY_ID"] == "access"
@@ -296,7 +296,7 @@ def test_generate_archival_object_page_builds_ark_manifest_url(monkeypatch, tmp_
         "subjects": [],
         "notes": [],
     }
-    build_directory = SimpleNamespace(name=str(tmp_path))
+    build_directory = tempfile.TemporaryDirectory()
 
     monkeypatch.setattr(
         alchemist,
@@ -304,7 +304,6 @@ def test_generate_archival_object_page_builds_ark_manifest_url(monkeypatch, tmp_
         lambda key, **kwargs: {
             "ALCHEMIST_BASE_URL": "https://digital.example.edu",
             "OUR_NMA": "digital.example.edu",
-            "COMMON_PATH_PREFIX": "collections",
             "ARCHIVESSPACE_PUBLIC_URL": "https://archivesspace.example.edu",
         }.get(key, kwargs.get("default")),
     )
@@ -326,7 +325,9 @@ def test_generate_archival_object_page_builds_ark_manifest_url(monkeypatch, tmp_
         build_directory, archival_object, arrangement, mimetype=""
     )
 
-    output_file = tmp_path / "collections" / "collection_1" / "aspace_1" / "index.html"
+    output_file = (
+        Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
+    )
     assert output_file.exists()
     assert (
         output_file.read_text()
@@ -349,15 +350,15 @@ def test_generate_iiif_manifest_sets_id_and_thumbnail_urls(monkeypatch, tmp_path
         "subjects": [],
         "notes": [],
     }
-    build_directory = SimpleNamespace(name=str(tmp_path))
+    build_directory = tempfile.TemporaryDirectory()
     filepaths = [Path("foo_001_01.tif")]
+    sequenced_filepaths = {"0001": Path("foo_001_01.tif")}
 
     monkeypatch.setattr(
         alchemist,
         "config",
         lambda key, **kwargs: {
             "ALCHEMIST_BASE_URL": "https://digital.example.edu",
-            "COMMON_PATH_PREFIX": "collections",
             "ALCHEMIST_IIIF_ENDPOINT": "https://iiif.example.edu",
             "OUR_NMA": "resolver.example.edu",
         }.get(key, kwargs.get("default")),
@@ -372,14 +373,19 @@ def test_generate_iiif_manifest_sets_id_and_thumbnail_urls(monkeypatch, tmp_path
             return self._value
 
     class FakeExecutor:
+        def __init__(self, *args, **kwargs):
+            pass
+
         def __enter__(self):
             return self
 
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def submit(self, fn, filepath, archival_object_arg, arrangement_arg, seq):
-            return FakeFuture({"@type": "sc:Canvas", "@id": f"canvas:{Path(filepath).stem}"})
+        def submit(self, fn, filepath, archival_object_arg, sequence_indicator_arg):
+            return FakeFuture(
+                {"@type": "sc:Canvas", "@id": f"canvas:{Path(filepath).stem}"}
+            )
 
     monkeypatch.setattr(alchemist, "ProcessPoolExecutor", FakeExecutor)
 
@@ -389,10 +395,11 @@ def test_generate_iiif_manifest_sets_id_and_thumbnail_urls(monkeypatch, tmp_path
         archival_object,
         arrangement,
         mimetype="",
+        sequenced_filepaths=sequenced_filepaths,
     )
 
     manifest_path = (
-        tmp_path / "collections" / "collection_1" / "aspace_1" / "manifest.json"
+        Path(build_directory.name) / "collection_1" / "aspace_1" / "manifest.json"
     )
     manifest = json.loads(manifest_path.read_text())
 
@@ -402,9 +409,9 @@ def test_generate_iiif_manifest_sets_id_and_thumbnail_urls(monkeypatch, tmp_path
     )
     assert (
         manifest["thumbnail"]["@id"]
-        == "https://iiif.example.edu/ark:99999/abc123x/foo_001_01/full/200,/0/default.webp"
+        == "https://iiif.example.edu/ark:99999/abc123x/0001/full/200,/0/default.webp"
     )
     assert (
         manifest["thumbnail"]["service"]["@id"]
-        == "https://iiif.example.edu/ark:99999/abc123x/foo_001_01"
+        == "https://iiif.example.edu/ark:99999/abc123x/0001"
     )

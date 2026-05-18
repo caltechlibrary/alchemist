@@ -21,7 +21,7 @@ from urllib.parse import unquote
 import boto3  # pypi: boto3
 import jinja2  # pypi: Jinja2
 
-from decouple import Config, RepositoryIni  # pypi: python-decouple-typed
+from decouple import Config, RepositoryIni  # pypi: python-decouple
 
 import arkminter
 import cascflow
@@ -69,6 +69,7 @@ execute_parser.add_argument(
 )
 
 args = None
+settings_path = None
 config = cascflow.config
 logger = logging.getLogger("alchemist")
 
@@ -350,7 +351,14 @@ LINKED_AGENT_ARCHIVAL_RECORD_RELATORS = {
 RIGHTS_NOTICE_HTML = '<p>These digitized collections are accessible for purposes of education and research. Due to the nature of archival collections, archivists at the Caltech Archives and Special Collections are not always able to identify copyright and rights of privacy, publicity, or trademark. We are eager to <a href="mailto:archives@caltech.edu">hear from any rights holders</a>, so that we may obtain accurate information. Upon request, we’ll remove material from public view while we address a rights issue.</p>'
 
 
-def invalidate_cloudfront_paths(paths=None, caller_reference=None):
+def _worker_init(sp: str) -> None:
+    """Initialize worker process config from a settings.ini path (sp)."""
+    cascflow.set_config(Config(RepositoryIni(sp)))
+
+
+def invalidate_cloudfront_paths(distribution=None, paths=None, caller_reference=None):
+    if distribution is None:
+        distribution = config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID")
     if not caller_reference:
         caller_reference = str(time.time())
     cloudfront_client = boto3.client(
@@ -363,7 +371,7 @@ def invalidate_cloudfront_paths(paths=None, caller_reference=None):
     quantity = len(paths)
     # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/cloudfront/client/create_invalidation.html
     response = cloudfront_client.create_invalidation(
-        DistributionId=config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID"),
+        DistributionId=distribution,
         InvalidationBatch={
             "Paths": {"Quantity": quantity, "Items": paths},
             "CallerReference": caller_reference,
@@ -374,14 +382,14 @@ def invalidate_cloudfront_paths(paths=None, caller_reference=None):
     waiter = cloudfront_client.get_waiter("invalidation_completed")
     logger.debug("🐞 WAITING ON CLOUDFRONT INVALIDATION")
     waiter.wait(
-        DistributionId=config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID"),
+        DistributionId=distribution,
         Id=response["Invalidation"]["Id"],
     )
     logger.debug("🐞 CLOUDFRONT INVALIDATION COMPLETE")
 
 
 def create_canvas_metadata(
-    filepath: Path, archival_object: dict, arrangement: dict, sequence_indicators: dict
+    filepath: Path, archival_object: dict, sequence_indicator: str
 ) -> dict:
     magick_identify = subprocess.run(
         [
@@ -400,32 +408,36 @@ def create_canvas_metadata(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
             # TODO handle potential ARK Qualifier upstream
-            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
-            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
+            archival_object["external_ark_url"]
+            .split(config("OUR_NMA"))[-1]
+            .split("/")[1],
+            archival_object["external_ark_url"]
+            .split(config("OUR_NMA"))[-1]
+            .split("/")[2],
             "canvas",
-            filepath.stem,
+            sequence_indicator,
         ]
     )
     escaped_identifier = "/".join(
         [
             # TODO handle potential ARK Qualifier upstream
-            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
-            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
-            filepath.stem,
+            archival_object["external_ark_url"]
+            .split(config("OUR_NMA"))[-1]
+            .split("/")[1],
+            archival_object["external_ark_url"]
+            .split(config("OUR_NMA"))[-1]
+            .split("/")[2],
+            sequence_indicator,
         ]
     )
     service_id = "/".join(
         [config("ALCHEMIST_IIIF_ENDPOINT").rstrip("/"), escaped_identifier]
     )
     resource_id = service_id + "/full/max/0/default.jpg"
-    if sequence_indicators.get(archival_object["component_id"]):
-        canvas_label = filepath.stem.split("_")[-1].lstrip("0")
-    else:
-        canvas_label = filepath.stem
     canvas = {
         "@type": "sc:Canvas",
         "@id": canvas_id,
-        "label": canvas_label,
+        "label": sequence_indicator,
         "width": dimensions[0],
         "height": dimensions[1],
         "images": [
@@ -449,25 +461,35 @@ def create_canvas_metadata(
 
 
 def get_thumbnail_url(
-    filepaths: list[Path], archival_object: dict, arrangement: dict
+    filepaths: list[Path],
+    archival_object: dict,
+    arrangement: dict,
+    sequenced_filepaths: dict[str, Path],
 ) -> str:
-    source_file = Path(sorted(filepaths)[0])
-    if source_file.suffix == ".mp4":
+    if next(iter(sequenced_filepaths.values())).suffix == ".mp4":
         return "/".join(
             [
                 config("ALCHEMIST_BASE_URL").rstrip("/"),
                 # TODO handle potential ARK Qualifier upstream
-                archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
-                archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
+                archival_object["external_ark_url"]
+                .split(config("OUR_NMA"))[-1]
+                .split("/")[1],
+                archival_object["external_ark_url"]
+                .split(config("OUR_NMA"))[-1]
+                .split("/")[2],
                 "thumbnail.webp",
             ]
         )
     thumbnail_id = "/".join(
         [
             # TODO handle potential ARK Qualifier upstream
-            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
-            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
-            source_file.stem,
+            archival_object["external_ark_url"]
+            .split(config("OUR_NMA"))[-1]
+            .split("/")[1],
+            archival_object["external_ark_url"]
+            .split(config("OUR_NMA"))[-1]
+            .split("/")[2],
+            next(iter(sequenced_filepaths.keys())),
         ]
     )
     return "/".join(
@@ -487,6 +509,7 @@ def create_digital_object_file_versions(
     filepaths: list[Path],
     archival_object: dict,
     arrangement: dict,
+    sequenced_filepaths: dict[str, Path],
 ) -> None:
     logger.debug(f"🐞 ARCHIVAL_OBJECT: {archival_object['component_id']}")
     logger.debug(f"🐞 BUILD_DIRECTORY: {build_directory}")
@@ -494,7 +517,6 @@ def create_digital_object_file_versions(
     archival_object_directory = (
         Path(build_directory.name)
         .joinpath(
-            config("COMMON_PATH_PREFIX"),
             arrangement["collection_id"],
             archival_object["component_id"],
         )
@@ -506,8 +528,12 @@ def create_digital_object_file_versions(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
             # TODO handle potential ARK Qualifier upstream
-            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
-            archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
+            archival_object["external_ark_url"]
+            .split(config("OUR_NMA"))[-1]
+            .split("/")[1],
+            archival_object["external_ark_url"]
+            .split(config("OUR_NMA"))[-1]
+            .split("/")[2],
         ]
     )
     logger.info(f"✨ ARCHIVAL OBJECT PAGE URL: {archival_object_page_url}")
@@ -529,20 +555,40 @@ def create_digital_object_file_versions(
         digital_object_type = ""
 
     file_versions = [
+        # NOTE thumbnail must come first so that it gets linked to the other published file version
+        # > When a Digital Object or Digital Object Component record contains
+        # > multiple published File Versions, the order of the File Versions
+        # > affects the linking functionality of the representative image in
+        # > the public user interface.
+        # https://archivesspace.atlassian.net/wiki/x/CYCKy#%E2%80%9CMake-Representative%E2%80%9D-and-Digital-Object-Record-display-on-the-Public-User-Interface
         {
-            "file_uri": get_thumbnail_url(filepaths, archival_object, arrangement),
+            "file_uri": get_thumbnail_url(
+                filepaths, archival_object, arrangement, sequenced_filepaths
+            ),
             "jsonmodel_type": "file_version",
             "is_representative": True,
+            # NOTE caption appears as the thumbnail caption on the Digital Object record in the Public UI
+            # without the caption the thumbnail appears captionless on the Digital Object record in the Public UI
             "caption": archival_object["title"],
             "publish": True,
             "use_statement": "image-thumbnail",
             "xlink_show_attribute": "embed",
+            # NOTE setting file_format_name to jpeg causes the thumbnail to appear in the Staff UI
+            # https://archivesspace.atlassian.net/wiki/x/CYCKy#Digital-Object-display-in-the-Staff-User-Interface
+            "file_format_name": "jpeg",
+        },
+        {
+            "file_uri": archival_object["external_ark_url"],
+            "jsonmodel_type": "file_version",
+            # NOTE caption appears as the Additional File Versions link text on the Digital Object record in the Public UI;
+            # without the caption the Additional File Versions link text is the use_statement value
+            "caption": f"{archival_object['title']}",
+            "publish": True,
+            "use_statement": "Persistent-URL",
         },
         {
             "file_uri": archival_object_page_url,
             "jsonmodel_type": "file_version",
-            "caption": f"{archival_object['title']} {digital_object_type.replace('_', ' ')}",
-            "publish": True,
             "use_statement": "Web-Access",
         },
     ]
@@ -575,20 +621,19 @@ def publish_archival_object_access_files(
 ) -> None:
     archival_object_access_path = "/".join(
         [
-            config("COMMON_PATH_PREFIX"),
             arrangement["collection_id"],
             archival_object["component_id"],
         ]
     )
     # TODO handle potential ARK Qualifier upstream
-    our_ark = f"{archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1]}/{archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2]}"
+    our_ark = f"{archival_object['external_ark_url'].split(config('OUR_NMA'))[-1].split('/')[1]}/{archival_object['external_ark_url'].split(config('OUR_NMA'))[-1].split('/')[2]}"
     try:
         s5cmd_sync = subprocess.run(
             [
                 config("S5CMD_CMD"),
                 "sync",
                 f"{build_directory.name}/{archival_object_access_path}/*",
-                f"s3://{config('S3_BUCKET')}/{our_ark}/",
+                f"s3://{config('ALCHEMIST_BUCKET')}/{our_ark}/",
             ],
             env={
                 "AWS_ACCESS_KEY_ID": config("AWS_ACCESS_KEY_ID"),
@@ -600,8 +645,10 @@ def publish_archival_object_access_files(
         )
         for line in s5cmd_sync.stdout.splitlines():
             logger.debug(f"🐞 S5CMD SYNC OUTPUT: {line}")
-    except:
+    except subprocess.CalledProcessError as e:
         logger.exception("‼️")
+        logger.debug("🐞 S5CMD STDOUT:", e.stdout)
+        logger.debug("🐞 S5CMD STDERR:", e.stderr)
         raise
 
 
@@ -833,8 +880,12 @@ def generate_archival_object_page(
                 [
                     config("ALCHEMIST_BASE_URL").rstrip("/"),
                     # TODO handle potential ARK Qualifier upstream
-                    archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
-                    archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
+                    archival_object["external_ark_url"]
+                    .split(config("OUR_NMA"))[-1]
+                    .split("/")[1],
+                    archival_object["external_ark_url"]
+                    .split(config("OUR_NMA"))[-1]
+                    .split("/")[2],
                     "manifest.json",
                 ]
             )
@@ -856,14 +907,12 @@ def generate_archival_object_page(
         extents_display = format_archival_object_extents_display(archival_object)
         subjects = format_archival_object_subjects_display(archival_object)
         notes_display = format_archival_object_notes_display(archival_object)
-        archival_object_page_key = (
-            Path(config("COMMON_PATH_PREFIX"))
-            .joinpath(
+        archival_object_page_key = "/".join(
+            [
                 arrangement["collection_id"],
                 archival_object["component_id"],
                 "index.html",
-            )
-            .as_posix()
+            ]
         )
         archival_object_page_file = (
             Path(build_directory.name).joinpath(archival_object_page_key).as_posix()
@@ -903,12 +952,21 @@ def generate_archival_object_page(
         raise
 
 
+def get_sequence_indicator(filepath):
+    seq = filepath.stem.split("_")[-1] if "_" in filepath.stem else filepath.stem
+    num = seq.rstrip("rv")
+    suffix = seq[len(num) :]
+    padded = num.zfill(4)
+    return f"{padded}{suffix}".lower()
+
+
 def generate_iiif_manifest(
     build_directory: tempfile.TemporaryDirectory[str],
     filepaths: list[Path],
     archival_object: dict,
     arrangement: dict,
     mimetype: str,
+    sequenced_filepaths: dict[str, Path],
 ) -> None:
     if mimetype == "video/mp4":
         # TODO use IIIF Presentation API 3.0; manifest.json files can supply video
@@ -991,16 +1049,20 @@ def generate_iiif_manifest(
                 # TODO validate against Restriction End date
                 attribution = note_contents
     # Use an existing manifiest file if we are only updating metadata and have no filepaths.
-    if not filepaths:
+    if not sequenced_filepaths:
         manifest_key = "/".join(
             [
                 # TODO handle potential ARK Qualifier upstream
-                archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
-                archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
+                archival_object["external_ark_url"]
+                .split(config("OUR_NMA"))[-1]
+                .split("/")[1],
+                archival_object["external_ark_url"]
+                .split(config("OUR_NMA"))[-1]
+                .split("/")[2],
                 "manifest.json",
             ]
         )
-        response = cascflow.s3_get_object(config("S3_BUCKET"), manifest_key)
+        response = cascflow.s3_get_object(config("ALCHEMIST_BUCKET"), manifest_key)
         if response is None:
             raise FileNotFoundError(f"❌ MANIFEST NOT FOUND IN S3: {manifest_key}")
         manifest = json.loads(response["Body"].read())
@@ -1015,8 +1077,12 @@ def generate_iiif_manifest(
                 [
                     config("ALCHEMIST_BASE_URL").rstrip("/"),
                     # TODO handle potential ARK Qualifier upstream
-                    archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1],
-                    archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[2],
+                    archival_object["external_ark_url"]
+                    .split(config("OUR_NMA"))[-1]
+                    .split("/")[1],
+                    archival_object["external_ark_url"]
+                    .split(config("OUR_NMA"))[-1]
+                    .split("/")[2],
                     "manifest.json",
                 ]
             ),
@@ -1030,11 +1096,13 @@ def generate_iiif_manifest(
         manifest.update(
             {
                 "thumbnail": {
-                    "@id": get_thumbnail_url(filepaths, archival_object, arrangement),
+                    "@id": get_thumbnail_url(
+                        filepaths, archival_object, arrangement, sequenced_filepaths
+                    ),
                     "service": {
                         "@context": "http://iiif.io/api/image/2/context.json",
                         "@id": get_thumbnail_url(
-                            filepaths, archival_object, arrangement
+                            filepaths, archival_object, arrangement, sequenced_filepaths
                         ).rsplit("/", maxsplit=4)[0],
                         "profile": "http://iiif.io/api/image/2/level1.json",
                     },
@@ -1044,32 +1112,28 @@ def generate_iiif_manifest(
     manifest["metadata"] = metadata
     if attribution:
         manifest["attribution"] = attribution
-    # Update sequence indicators and canvas metadata if we have filepaths.
-    if filepaths:
+    # Update sequence indicators and canvas metadata if we have sequenced_filepaths.
+    if sequenced_filepaths:
         manifest.update({"sequences": [{"@type": "sc:Sequence", "canvases": []}]})
-        # Check all filepaths for valid sequence indicators.
-        sequence_indicators = {
-            archival_object["component_id"]: has_valid_sequence_indicators(filepaths)
-        }
-        with ProcessPoolExecutor() as executor:
+        with ProcessPoolExecutor(
+            initializer=_worker_init, initargs=(str(settings_path),)
+        ) as executor:
             futures = [
                 executor.submit(
                     create_canvas_metadata,
                     filepath,
                     archival_object,
-                    arrangement,
-                    sequence_indicators,
+                    sequence_indicator,
                 )
-                for filepath in sorted(filepaths)
+                for sequence_indicator, filepath in sequenced_filepaths.items()
             ]
-            # maintain the order of the filepaths
+            # maintain the order of the filepaths (now sorted by sequence)
             for future in futures:
                 logger.debug(f"🐞 CANVAS: {future.result()}")
                 # add canvas to sequences
                 manifest["sequences"][0]["canvases"].append(future.result())
     # save manifest file
     manifest_file = Path(build_directory.name).joinpath(
-        config("COMMON_PATH_PREFIX"),
         arrangement["collection_id"],
         archival_object["component_id"],
         "manifest.json",
@@ -1085,6 +1149,7 @@ def create_pyramid_tiff(
     filepath: Path,
     archival_object: dict,
     arrangement: dict,
+    sequence_indicator: str,
 ) -> None:
     try:
         # NOTE vips has problems with JP2 source images
@@ -1125,10 +1190,9 @@ def create_pyramid_tiff(
             vips_source_image = filepath.as_posix()
         pyramid_tiff_key = "/".join(
             [
-                config("COMMON_PATH_PREFIX"),
                 arrangement["collection_id"],
                 archival_object["component_id"],
-                f"{filepath.stem}.ptif",
+                f"{sequence_indicator}.ptif",
             ]
         )
         pyramid_tiff_file = (
@@ -1166,6 +1230,7 @@ def conditional_derivative_file_processing(
     filepath: Path,
     archival_object: dict,
     arrangement: dict,
+    sequence_indicator: str,
 ) -> None:
     type, encoding = mimetypes.guess_type(filepath.as_posix())
 
@@ -1174,11 +1239,12 @@ def conditional_derivative_file_processing(
         return
 
     if type.startswith("image/"):
-        create_pyramid_tiff(build_directory, filepath, archival_object, arrangement)
+        create_pyramid_tiff(
+            build_directory, filepath, archival_object, arrangement, sequence_indicator
+        )
     elif type.startswith("video/"):
         video_key = "/".join(
             [
-                config("COMMON_PATH_PREFIX"),
                 arrangement["collection_id"],
                 archival_object["component_id"],
                 filepath.name,
@@ -1238,9 +1304,12 @@ def loop_over_archival_object_files(
     filepaths: list[Path],
     archival_object: dict,
     arrangement: dict,
+    sequenced_filepaths: dict[str, Path],
 ) -> None:
     """Concurrently process files in the filepaths list."""
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(
+        initializer=_worker_init, initargs=(str(settings_path),)
+    ) as executor:
         [
             executor.submit(
                 conditional_derivative_file_processing,
@@ -1248,8 +1317,10 @@ def loop_over_archival_object_files(
                 filepath,
                 archival_object,
                 arrangement,
+                sequence_indicator,
             )
-            for filepath in filepaths
+            # for filepath in filepaths
+            for sequence_indicator, filepath in sequenced_filepaths.items()
         ]
 
 
@@ -1258,6 +1329,7 @@ def archival_object_level_processing(
     filepaths: list[Path],
     archival_object: dict,
     arrangement: dict,
+    sequenced_filepaths: dict[str, Path],
 ) -> None:
     logger.debug(f"🐞 {archival_object['component_id']}")
     # TODO consider conditions for identifiying non-image file types
@@ -1271,11 +1343,20 @@ def archival_object_level_processing(
     )
     # `filepaths`` is set to [] if we are only updating metadata.
     generate_iiif_manifest(
-        build_directory, filepaths, archival_object, arrangement, mimetype
+        build_directory,
+        filepaths,
+        archival_object,
+        arrangement,
+        mimetype,
+        sequenced_filepaths,
     )
     if filepaths:
         loop_over_archival_object_files(
-            build_directory, filepaths, archival_object, arrangement
+            build_directory,
+            filepaths,
+            archival_object,
+            arrangement,
+            sequenced_filepaths,
         )
         logger.info(
             f"☑️  DERIVATIVE FILE PROCESSING COMPLETE: {archival_object['component_id']}"
@@ -1289,15 +1370,13 @@ def _parse_indicator(stem: str) -> tuple[int, str | None] | None:
     or returns None if the stem is invalid.
     """
     components = stem.split("_")
-    if len(components) < 2:
-        return None
     last = components[-1]
     # Use tuple form of endswith to check for either suffix in one call
     if last.endswith(("r", "v")):
         digits, rv = last[:-1], last[-1]
     else:
         digits, rv = last, None
-    if not (digits.isdigit() and len(digits) >= 2):
+    if not digits.isdigit():
         return None
     return (int(digits), rv)
 
@@ -1404,6 +1483,55 @@ def update_external_ark_url(archival_object: dict) -> None:
     return
 
 
+def get_our_ark(archival_object: dict) -> str:
+    # validate, update, or mint ARK as needed
+    existing_our_ark = get_existing_our_ark(archival_object)
+    if existing_our_ark:
+        metadata = json.loads(
+            arkminter.format_metadata(
+                nma=config("OUR_NMA"),
+                ark=existing_our_ark,
+                title=archival_object["title"],
+                creator="; ".join(
+                    format_archival_object_creators_display(archival_object).values()
+                )
+                or "",
+                date="; ".join(format_archival_object_dates_display(archival_object))
+                or "",
+            )
+        )
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=config("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=config("AWS_SECRET_ACCESS_KEY"),
+        )
+        logger.debug("🐞 CONNECTION TO S3 ESTABLISHED")
+        arkminter.put_objects(
+            bucket_name=config("RESOLVER_BUCKET"),
+            ark=existing_our_ark,
+            redirect_location=f"{config('ALCHEMIST_BASE_URL').rstrip('/')}/{existing_our_ark}",
+            metadata=metadata,
+            s3_client=s3_client,
+        )
+        our_ark = existing_our_ark
+    else:
+        minted_ark = arkminter.mint_ark(
+            bucket_name=config("RESOLVER_BUCKET"),
+            redirect_domain=config("ALCHEMIST_BASE_URL"),
+            nma=config("OUR_NMA"),
+            naan=config("OUR_NAAN"),
+            title=archival_object["title"],
+            creator="; ".join(
+                format_archival_object_creators_display(archival_object).values()
+            )
+            or "",
+            date="; ".join(format_archival_object_dates_display(archival_object)) or "",
+            shoulder=config("OUR_SHOULDER", default=""),
+        )
+        our_ark = minted_ark
+    return our_ark
+
+
 def is_archival_object_eligible_for_publication(
     archival_object: dict, pipeline: str
 ) -> bool:
@@ -1494,6 +1622,7 @@ def validate_digital_files_for_publication(
     empty_directories = validation_results.get("empty_directories", [])
     file_count = validation_results.get("file_count", 0)
     unsupported_files = []
+    missing_sequence_indicators = []
     sequence_indicators = {}
     # get the cached archival object data from validation_results
     cached_archival_objects = validation_results.get("eligible_archival_objects", {})
@@ -1520,21 +1649,27 @@ def validate_digital_files_for_publication(
             for child in children:
                 if not is_publication_file_supported(child):
                     unsupported_files.append(child)
-    ## messaging
+            logger.debug(
+                f"🐞 SEQUENCE_INDICATORS for {entry.stem}: {sequence_indicators[entry.stem]}"
+            )
+    ## validation and messaging
     if eligible_archival_objects:
         for eligible_archival_object in eligible_archival_objects:
             logger.info(f"🉑 {eligible_archival_object}")
-            if sequence_indicators.get(eligible_archival_object):
-                logger.info("🔢 THUMBNAILS WILL BE LABELED WITH SEQUENTIAL INDICATORS")
-            else:
-                logger.info("🔠 THUMBNAILS WILL BE LABELED WITH FULL FILENAMES")
+            if sequence_indicators.get(eligible_archival_object) is False:
+                missing_sequence_indicators.append(eligible_archival_object)
         logger.info(f"🗂 ARCHIVAL OBJECT COUNT: {len(eligible_archival_objects)}")
         logger.info(f"📄 FILE COUNT: {file_count}")
-    ## validation and messaging
     if file_count == 0:
         message = "❌ NO FILES FOUND"
         logger.error(message)
         raise FileNotFoundError(message)
+    if missing_sequence_indicators:
+        message = "❌ NO VALID SEQUENCE INDICATORS FOUND IN FILE NAMES FOR: {}".format(
+            ", ".join(missing_sequence_indicators)
+        )
+        logger.error(message)
+        raise RuntimeError(message)
     if ineligible_archival_objects:
         message = "❌ INELIGIBLE ARCHIVAL OBJECTS FOUND"
         logger.error(message)
@@ -1562,14 +1697,15 @@ def validate_digital_files_for_publication(
 
 
 def main():
-    global args, config, logger
+    global args, settings_path, config, logger
     args = parser.parse_args()
 
     # set up settings path and logging
-    if args.settings is not None:
-        settings_path = Path(args.settings).expanduser().resolve()
-    else:
-        settings_path = Path(__file__).parent.joinpath("settings.ini").resolve()
+    settings_path = (
+        Path(args.settings).expanduser().resolve()
+        if args.settings
+        else Path(__file__).parent.joinpath("settings.ini").resolve()
+    )
     if not settings_path.exists():
         raise FileNotFoundError(f"Settings file not found: {settings_path}")
     # configure cascflow to use our settings.ini file
@@ -1599,49 +1735,34 @@ def main():
             for component_id, archival_object in validation_results.get(
                 "eligible_archival_objects", {}
             ).items():
+                our_ark = get_our_ark(archival_object)
+                archival_object["external_ark_url"] = (
+                    f"https://{config('OUR_NMA')}/{our_ark}"
+                )
                 arrangement = cascflow.get_arrangement(archival_object)
                 filepaths = []
+                sequenced_filepaths = {}
                 archival_object_level_processing(
-                    build_directory, filepaths, archival_object, arrangement
+                    build_directory,
+                    filepaths,
+                    archival_object,
+                    arrangement,
+                    sequenced_filepaths,
                 )
                 publish_archival_object_access_files(
                     build_directory, archival_object, arrangement
                 )
-                # in the case of a metadata-only update, we still want to mint
-                # an ARK if one does not exist and update the archival object
-                # records with the external ARK; if one does exist, we want to
-                # update and replace the ARK info.jsonld and index.html redirect
-                # objects with current metadata and target URLs
-                # first condition:
-                # do we have external_ark_url?
-                # YES
-                #   TOOO should we validate the syntax? http or https? ark:/ or ark:? naan?
-                #   extract ark from external_ark_url
-                #   arkminter.format_metadata() with the existing ark and updated metadata
-                #   arkminter.put_objects() to update info.jsonld and index.html
-                #   do we need to update the target URL for the index.html redirect object?
-                #   do we need to create/update the Persistent-URL File URI entry?
-                #   do we need to update the Web-Access File URI entry to use an ARK path?
-                #       digital.example.edu/ark:NAAN/NAME
-                #       instead of digital.example.edu/collections/COLLECTION/COMPONENT_ID
-                # NO
-                #   mint new ARK
-                #   create/update File URIs to use ARK paths
+                if validation_results.get("identifier_level") == "archival_object":
+                    # Invalidate the paths for the updated metadata.
+                    if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
+                        # We should only have a single archival object.
+                        if arrangement is not None:
+                            invalidate_cloudfront_paths(paths=[f"/{our_ark}/*"])
+            # TODO rethink the circumstance of updating metadata for a resource-level identifier
             if validation_results.get("identifier_level") == "resource":
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # Invalidate everything under the resource path component.
-                    invalidate_cloudfront_paths(
-                        paths=[f"/{config('COMMON_PATH_PREFIX')}/{args.context}/*"]
-                    )
-            else:
-                if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
-                    # We should only have a single archival object.
-                    if arrangement is not None:
-                        invalidate_cloudfront_paths(
-                            paths=[
-                                f"/{config('COMMON_PATH_PREFIX')}/{arrangement['collection_id']}/{args.context}/*"
-                            ]
-                        )
+                    invalidate_cloudfront_paths(paths=[f"/{args.context}/*"])
         else:
             # Our target is either "publication" or "files". The context is the volume name.
             batch_set_id = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
@@ -1654,61 +1775,39 @@ def main():
                 arrangement,
             ) in cascflow.execute(args.context, batch_set_id, args.target):
                 """process each archival_object result as it is yielded"""
-                # validate, update, or mint ARK as needed
-                existing_our_ark = get_existing_our_ark(archival_object)
-                if existing_our_ark:
-                    # TODO handle multiple creators and dates
-                    metadata = json.loads(
-                        arkminter.format_metadata(
-                            nma=config("ARK_NMA"),
-                            ark=existing_our_ark,
-                            title=archival_object["title"],
-                            creator=archival_object.get("linked_agents", [{}])[0].get(
-                                "title", ""
-                            ),
-                            date=archival_object.get("dates", [{}])[0].get("label", ""),
-                        )
-                    )
-                    s3_client = boto3.client(
-                        "s3",
-                        aws_access_key_id=config("AWS_ACCESS_KEY_ID"),
-                        aws_secret_access_key=config("AWS_SECRET_ACCESS_KEY"),
-                    )
-                    logger.debug("🐞 CONNECTION TO S3 ESTABLISHED")
-                    arkminter.put_objects(
-                        bucket_name=config("RESOLVER_BUCKET"),
-                        ark=existing_our_ark,
-                        redirect_location=f"{config('ALCHEMIST_BASE_URL').rstrip('/')}/{existing_our_ark}",
-                        metadata=metadata,
-                        s3_client=s3_client,
-                    )
-                    archival_object["external_ark_url"] = (
-                        f"https://{config('OUR_NMA')}/{existing_our_ark}"
-                    )
-                else:
-                    # TODO handle multiple creators and dates
-                    minted_ark = arkminter.mint_ark(
-                        bucket_name=config("RESOLVER_BUCKET"),
-                        redirect_domain=config("ALCHEMIST_BASE_URL"),
-                        nma=config("OUR_NMA"),
-                        naan=config("OUR_NAAN"),
-                        title=archival_object["title"],
-                        creator=archival_object.get("linked_agents", [{}])[0].get(
-                            "title", ""
-                        ),
-                        date=archival_object.get("dates", [{}])[0].get("label", ""),
-                    )
-                    archival_object["external_ark_url"] = (
-                        f"https://{config('OUR_NMA')}/{minted_ark}"
-                    )
+                logger.debug(f"🐞 STAGE_2_PATH_OBJ: {stage_2_path_obj}")
+                our_ark = get_our_ark(archival_object)
+                logger.debug(f"🐞 OUR_ARK: {our_ark}")
+                archival_object["external_ark_url"] = (
+                    f"https://{config('OUR_NMA')}/{our_ark}"
+                )
+                logger.debug(
+                    f"🐞 ARCHIVAL_OBJECT[EXTERNAL_ARK_URL]: {archival_object['external_ark_url']}"
+                )
+                sequenced_filepaths = {
+                    get_sequence_indicator(path): path
+                    for path in sorted(filepaths, key=get_sequence_indicator)
+                }
+                if Path(stage_2_path_obj).is_file():
+                    # when the object is a single file reset the sequence indicator to "0001"
+                    sequenced_filepaths = {"0001": filepaths[0]}
+                logger.debug(f"🐞 SEQUENCED_FILEPATHS: {sequenced_filepaths}")
                 archival_object_level_processing(
-                    build_directory, filepaths, archival_object, arrangement
+                    build_directory,
+                    filepaths,
+                    archival_object,
+                    arrangement,
+                    sequenced_filepaths,
                 )
                 publish_archival_object_access_files(
                     build_directory, archival_object, arrangement
                 )
                 create_digital_object_file_versions(
-                    build_directory, filepaths, archival_object, arrangement
+                    build_directory,
+                    filepaths,
+                    archival_object,
+                    arrangement,
+                    sequenced_filepaths,
                 )
                 update_external_ark_url(archival_object)
                 cascflow.move_to_stage_3(stage_2_path_obj, batch_directory)
@@ -1717,16 +1816,23 @@ def main():
                     cloudfront_invalidation_batch.append(
                         "/".join(
                             [
-                                "",  ## start with a leading slash
-                                config("COMMON_PATH_PREFIX"),
-                                arrangement["collection_id"],
-                                archival_object["component_id"],
-                                "*",  ## end with a wildcard
+                                "",  # empty to start with a leading slash
+                                our_ark,
+                                "*",  # end with a wildcard
                             ]
                         )
                     )
             if args.target == "files" and cloudfront_invalidation_batch:
                 invalidate_cloudfront_paths(paths=cloudfront_invalidation_batch)
+                for path in cloudfront_invalidation_batch:
+                    # prepend /iiif/2 to each path
+                    cloudfront_invalidation_batch[
+                        cloudfront_invalidation_batch.index(path)
+                    ] = f"/iiif/2{path}"
+                invalidate_cloudfront_paths(
+                    distribution=config("IIIF_CLOUDFRONT_DISTRIBUTION_ID"),
+                    paths=cloudfront_invalidation_batch,
+                )
     else:
         parser.print_help()
 
