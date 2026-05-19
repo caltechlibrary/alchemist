@@ -1624,16 +1624,16 @@ def validate_digital_files_for_publication(
     unsupported_files = []
     missing_sequence_indicators = []
     sequence_indicators = {}
-    # get the cached archival object data from validation_results
-    cached_archival_objects = validation_results.get("eligible_archival_objects", {})
+    # get the eligible archival object data from validation_results
+    eligible_archival_objects_by_id = validation_results.get("eligible_archival_objects", {})
     logger.info(
-        f"{next(iter(cached_archival_objects))}{', …' if len(cached_archival_objects) > 1 else ''}"
+        f"{next(iter(eligible_archival_objects_by_id))}{', …' if len(eligible_archival_objects_by_id) > 1 else ''}"
     )
     ## iterate over the first level of entries in the source directory
     for entry in source_path.iterdir():
         ## validate the entry (file or directory) using cached data
-        if entry.stem in cached_archival_objects:
-            archival_object = cached_archival_objects[entry.stem]
+        if entry.stem in eligible_archival_objects_by_id:
+            archival_object = eligible_archival_objects_by_id[entry.stem]
             if is_archival_object_eligible_for_publication(archival_object, pipeline):
                 eligible_archival_objects.append(entry.stem)
             else:
