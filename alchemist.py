@@ -1626,9 +1626,10 @@ def validate_digital_files_for_publication(
     sequence_indicators = {}
     # get the eligible archival object data from validation_results
     eligible_archival_objects_by_id = validation_results.get("eligible_archival_objects", {})
-    logger.info(
-        f"{next(iter(eligible_archival_objects_by_id))}{', …' if len(eligible_archival_objects_by_id) > 1 else ''}"
-    )
+    if eligible_archival_objects_by_id:
+        logger.info(
+            f"{next(iter(eligible_archival_objects_by_id))}{', …' if len(eligible_archival_objects_by_id) > 1 else ''}"
+        )
     ## iterate over the first level of entries in the source directory
     for entry in source_path.iterdir():
         ## validate the entry (file or directory) using cached data
