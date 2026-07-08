@@ -1,6 +1,6 @@
 [project]
 name = "alchemist"
-version = "3.1.0"
+version = "3.2.0"
 description = "Caltech Archives Publication & Access System"
 readme = "README.md"
 authors = [
@@ -16,8 +16,8 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-arkminter = { path = "../arkminter", editable = true }
-cascflow = { path = "../cascflow", editable = true }
+arkminter = { git = "https://github.com/caltechlibrary/arkminter", tag = "v0.1.0" }
+cascflow = { git = "https://github.com/caltechlibrary/cascflow", tag = "v4.1.0" }
 
 [dependency-groups]
 dev = [
