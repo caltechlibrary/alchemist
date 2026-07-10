@@ -24,9 +24,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "arkminter", git = "https://github.com/caltechlibrary/arkminter?tag=v0.1.0" },
+    { name = "arkminter", git = "https://github.com/caltechlibrary/arkminter?tag=v0.2.0" },
     { name = "boto3" },
-    { name = "cascflow", git = "https://github.com/caltechlibrary/cascflow?tag=v4.1.0" },
+    { name = "cascflow", git = "https://github.com/caltechlibrary/cascflow?tag=v4.1.1" },
     { name = "jinja2" },
     { name = "python-decouple" },
 ]
@@ -41,8 +41,8 @@ dev = [
 
 [[package]]
 name = "arkminter"
-version = "0.1.0"
-source = { git = "https://github.com/caltechlibrary/arkminter?tag=v0.1.0#68232a429b0ac2e9a0b559a04c3ef265d5e653b2" }
+version = "0.2.0"
+source = { git = "https://github.com/caltechlibrary/arkminter?tag=v0.2.0#b253babca3e8220ff71401878132b03af91575cb" }
 dependencies = [
     { name = "boto3" },
 ]
@@ -154,8 +154,8 @@ wheels = [
 
 [[package]]
 name = "cascflow"
-version = "4.1.0"
-source = { git = "https://github.com/caltechlibrary/cascflow?tag=v4.1.0#8d364844e3a5a80a05246e18fdc6370e8c265a00" }
+version = "4.1.1"
+source = { git = "https://github.com/caltechlibrary/cascflow?tag=v4.1.1#42b38782225755f1a813fcfe4d9b632d812e31d9" }
 dependencies = [
     { name = "backoff" },
     { name = "boto3" },
