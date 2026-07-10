@@ -1,5 +1,12 @@
 # Alchemist Changelog
 
+## 3.2.1
+
+- fix `get_our_ark` to use one shared S3 client for both the update and mint paths (previously the mint path silently fell back to the default AWS credential chain instead of configured credentials)
+- use arkminter's shared `get_existing_our_ark` instead of a local copy
+- pin arkminter and cascflow to tagged releases (v0.2.0, v4.1.1)
+- add pytest CI workflow
+
 ## 3.2.0
 
 - integrate arkminter for ARK minting and metadata management
