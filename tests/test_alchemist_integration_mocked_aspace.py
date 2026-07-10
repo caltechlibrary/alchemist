@@ -33,10 +33,17 @@ def test_execute_publication_mints_and_persists_external_ark_url(
             "OUR_NAAN": "99999",
             "RESOLVER_BUCKET": "resolver-bucket",
             "ALCHEMIST_BASE_URL": "https://digital.example.edu",
+            "AWS_ACCESS_KEY_ID": "dummy",
+            "AWS_SECRET_ACCESS_KEY": "dummy",
         }
         return config_map.get(key, kwargs.get("default"))
 
-    monkeypatch.setattr(alchemist.cascflow, "config", fake_config)
+    # Patch the shared _config singleton directly so cascflow-internal calls,
+    # like establish_s3_connection(), see fake_config too -- not just
+    # alchemist's own config() calls. Also stub set_config to a no-op so
+    # main()'s own real set_config(Config(RepositoryIni(...))) call (reading
+    # the near-empty settings_file above) doesn't clobber _config afterward.
+    monkeypatch.setattr(alchemist.cascflow.cascflow, "_config", fake_config)
     monkeypatch.setattr(alchemist.cascflow, "set_config", lambda cfg: None)
     monkeypatch.setattr(alchemist.cascflow, "setup_logging", lambda _: None)
 

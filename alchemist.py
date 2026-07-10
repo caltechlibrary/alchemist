@@ -1439,6 +1439,10 @@ def update_external_ark_url(archival_object: dict) -> None:
 def get_our_ark(archival_object: dict) -> str:
     # validate, update, or mint ARK as needed
     naan = config("OUR_NAAN")
+    s3_client = cascflow.establish_s3_connection()
+    if s3_client is None:
+        raise RuntimeError("Failed to establish S3 connection")
+
     existing_our_ark = arkminter.get_existing_our_ark(archival_object, naan)
     if existing_our_ark:
         metadata = json.loads(
@@ -1454,12 +1458,6 @@ def get_our_ark(archival_object: dict) -> str:
                 or "",
             )
         )
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=config("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=config("AWS_SECRET_ACCESS_KEY"),
-        )
-        logger.debug("🐞 CONNECTION TO S3 ESTABLISHED")
         arkminter.put_objects(
             bucket_name=config("RESOLVER_BUCKET"),
             ark=existing_our_ark,
@@ -1481,6 +1479,7 @@ def get_our_ark(archival_object: dict) -> str:
             or "",
             date="; ".join(format_archival_object_dates_display(archival_object)) or "",
             shoulder=config("OUR_SHOULDER", default=""),
+            s3_client=s3_client,
         )
         our_ark = minted_ark
     return our_ark
