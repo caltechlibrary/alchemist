@@ -6,7 +6,6 @@ import datetime
 import json
 import logging
 import mimetypes
-import re
 import shutil
 import subprocess
 import tempfile
@@ -16,7 +15,6 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
 
 import boto3  # pypi: boto3
 import jinja2  # pypi: Jinja2
@@ -1420,51 +1418,6 @@ def has_valid_sequence_indicators(filepaths) -> bool:
     return all(rv_set == {"r", "v"} or rv_set == {None} for rv_set in seq_map.values())
 
 
-def get_existing_our_ark(archival_object: dict) -> str | None:
-    """Return our ARK from external_ark_url if configured and valid."""
-    external_ark_url = str(archival_object.get("external_ark_url", "")).strip()
-    if not external_ark_url:
-        return None
-
-    our_naan = str(config("OUR_NAAN", default="")).strip()
-    if not our_naan:
-        logger.warning(
-            "⚠️ OUR_NAAN IS NOT CONFIGURED; SKIPPING external_ark_url VALIDATION: %s",
-            archival_object.get("component_id", ""),
-        )
-        return None
-
-    decoded = unquote(external_ark_url)
-    # Match both ark:/NAAN/name and ark:NAAN/name forms.
-    # TODO determine if existing ARK contains a Qualifier after the Assigned Name
-    match = re.search(r"ark:(?:/)?([0-9A-Za-z]+)/([^?#/]+)", decoded)
-    if not match:
-        logger.warning(
-            "⚠️ INVALID external_ark_url FORMAT: %s (%s)",
-            archival_object.get("component_id", ""),
-            external_ark_url,
-        )
-        return None
-
-    existing_naan = match.group(1)
-    if existing_naan.lower() != our_naan.lower():
-        logger.warning(
-            "⚠️ external_ark_url HAS A DIFFERENT NAAN THAN OUR_NAAN (%s): %s (%s)",
-            existing_naan,
-            archival_object.get("component_id", ""),
-            external_ark_url,
-        )
-        return None
-
-    existing_our_ark = f"ark:{existing_naan}/{match.group(2)}"
-    logger.info(
-        "☑️ OUR ARK FOUND IN external_ark_url: %s (%s)",
-        existing_our_ark,
-        archival_object.get("component_id", ""),
-    )
-    return existing_our_ark
-
-
 def update_external_ark_url(archival_object: dict) -> None:
     """POST updated archival_object if external_ark_url has changed."""
     archivesspace_archival_object = cascflow.archivesspace_get(
@@ -1485,7 +1438,8 @@ def update_external_ark_url(archival_object: dict) -> None:
 
 def get_our_ark(archival_object: dict) -> str:
     # validate, update, or mint ARK as needed
-    existing_our_ark = get_existing_our_ark(archival_object)
+    naan = config("OUR_NAAN")
+    existing_our_ark = arkminter.get_existing_our_ark(archival_object, naan)
     if existing_our_ark:
         metadata = json.loads(
             arkminter.format_metadata(
@@ -1519,7 +1473,7 @@ def get_our_ark(archival_object: dict) -> str:
             bucket_name=config("RESOLVER_BUCKET"),
             redirect_domain=config("ALCHEMIST_BASE_URL"),
             nma=config("OUR_NMA"),
-            naan=config("OUR_NAAN"),
+            naan=naan,
             title=archival_object["title"],
             creator="; ".join(
                 format_archival_object_creators_display(archival_object).values()

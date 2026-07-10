@@ -138,50 +138,6 @@ def test_is_publication_file_supported_false():
     assert alchemist.is_publication_file_supported(Path("foo.unsupported")) is False
 
 
-def test_get_existing_our_ark_returns_none_without_external_ark_url():
-    ao = {"component_id": "aspace_1"}
-    assert alchemist.get_existing_our_ark(ao) is None
-
-
-def test_get_existing_our_ark_accepts_our_naan(monkeypatch):
-    monkeypatch.setattr(
-        alchemist,
-        "config",
-        lambda key, **kwargs: "99999" if key == "OUR_NAAN" else kwargs.get("default"),
-    )
-    ao = {
-        "component_id": "aspace_1",
-        "external_ark_url": "https://digital.example.edu/ark:/99999/abc123x",
-    }
-    assert alchemist.get_existing_our_ark(ao) == "ark:99999/abc123x"
-
-
-def test_get_existing_our_ark_rejects_non_our_naan(monkeypatch):
-    monkeypatch.setattr(
-        alchemist,
-        "config",
-        lambda key, **kwargs: "99999" if key == "OUR_NAAN" else kwargs.get("default"),
-    )
-    ao = {
-        "component_id": "aspace_1",
-        "external_ark_url": "https://n2t.net/ark:/99999/abc123x",
-    }
-    assert alchemist.get_existing_our_ark(ao) is None
-
-
-def test_get_existing_our_ark_rejects_invalid_external_ark_url(monkeypatch):
-    monkeypatch.setattr(
-        alchemist,
-        "config",
-        lambda key, **kwargs: "99999" if key == "OUR_NAAN" else kwargs.get("default"),
-    )
-    ao = {
-        "component_id": "aspace_1",
-        "external_ark_url": "https://example.org/not-an-ark",
-    }
-    assert alchemist.get_existing_our_ark(ao) is None
-
-
 def test_update_external_ark_url_posts_when_changed(monkeypatch):
     archival_object = {
         "uri": "/repositories/2/archival_objects/1",
