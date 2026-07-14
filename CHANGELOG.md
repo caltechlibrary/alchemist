@@ -1,5 +1,11 @@
 # Alchemist Changelog
 
+## 3.3.0
+
+- add settings.ini validation to the `validate` command (checks required variables are set and usable: binary paths, directories, URLs)
+- clean up example-settings.ini: remove unused `ARCHIVESSPACE_BASIC_AUTH_*` keys, document `IIIF_CLOUDFRONT_DISTRIBUTION_ID` and the ARK keys (`OUR_NMA`, `OUR_NAAN`, `OUR_SHOULDER`, `RESOLVER_BUCKET`)
+- pin cascflow to v4.2.0
+
 ## 3.2.2
 
 - bump arkminter pin to v0.2.1 (fixes minted ARK names occasionally containing a `/` as the check digit)
