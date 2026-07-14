@@ -1,5 +1,9 @@
 # Alchemist Changelog
 
+## 3.2.2
+
+- bump arkminter pin to v0.2.1 (fixes minted ARK names occasionally containing a `/` as the check digit)
+
 ## 3.2.1
 
 - fix `get_our_ark` to use one shared S3 client for both the update and mint paths (previously the mint path silently fell back to the default AWS credential chain instead of configured credentials)
