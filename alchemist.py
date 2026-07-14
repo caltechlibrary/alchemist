@@ -641,6 +641,47 @@ def create_digital_object_file_versions(
         cascflow.save_digital_object_file_versions(archival_object, file_versions)
 
 
+def update_digital_object_metadata(archival_object: dict) -> None:
+    """Sync an existing Digital Object's title and File Version captions
+    with the current Archival Object title.
+
+    Used by the metadata-only pipeline, where no derivative files are
+    rebuilt so create_digital_object_file_versions() cannot run. Human
+    archivists do not edit Digital Object records directly, so Alchemist
+    must propagate title changes made on the Archival Object itself.
+    """
+    digital_object_instances = [
+        instance
+        for instance in archival_object["instances"]
+        if "digital_object" in instance.keys()
+    ]
+    digital_object_count = len(digital_object_instances)
+    if digital_object_count > 1:
+        raise ValueError(
+            f"❌ MULTIPLE DIGITAL OBJECTS FOUND: {archival_object['component_id']}"
+        )
+    elif digital_object_count == 1:
+        digital_object = digital_object_instances[0]["digital_object"]["_resolved"]
+        file_versions = digital_object.get("file_versions")
+        if not file_versions:
+            # nothing published yet for this archival_object's digital_object
+            return
+        for file_version in file_versions:
+            # NOTE these are the only two captions derived from archival_object["title"];
+            # see create_digital_object_file_versions()
+            if file_version.get("use_statement") in (
+                "image-thumbnail",
+                "Persistent-URL",
+            ):
+                file_version["caption"] = archival_object["title"]
+        digital_object["title"] = archival_object["title"]
+        digital_object["file_versions"] = file_versions
+        cascflow.update_digital_object(digital_object["uri"], digital_object)
+        logger.info(
+            f"✨ DIGITAL OBJECT TITLE AND FILE VERSION CAPTIONS UPDATED: {archival_object['component_id']}"
+        )
+
+
 def publish_archival_object_access_files(
     build_directory: tempfile.TemporaryDirectory[str],
     archival_object: dict,
@@ -1755,6 +1796,7 @@ def main():
                 publish_archival_object_access_files(
                     build_directory, archival_object, arrangement
                 )
+                update_digital_object_metadata(archival_object)
                 if validation_results.get("identifier_level") == "archival_object":
                     # Invalidate the paths for the updated metadata.
                     if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):

@@ -68,3 +68,90 @@ def test_config_returns_value(monkeypatch):
         alchemist.cascflow, "config", lambda key, **kwargs: "dummy-value"
     )
     assert alchemist.cascflow.config("ANY_KEY") == "dummy-value"
+
+
+def test_update_digital_object_metadata_syncs_title_and_captions(monkeypatch):
+    updated = {}
+
+    def fake_update_digital_object(uri, data):
+        updated["uri"] = uri
+        updated["data"] = data
+
+    monkeypatch.setattr(
+        alchemist.cascflow, "update_digital_object", fake_update_digital_object
+    )
+    digital_object = {
+        "uri": "/digital_objects/1",
+        "title": "Old Title",
+        "file_versions": [
+            {"use_statement": "image-thumbnail", "caption": "Old Title"},
+            {"use_statement": "Persistent-URL", "caption": "Old Title"},
+            {"use_statement": "Web-Access"},
+        ],
+    }
+    ao = {
+        "component_id": "aspace_1",
+        "title": "New Title",
+        "instances": [{"digital_object": {"_resolved": digital_object}}],
+    }
+    alchemist.update_digital_object_metadata(ao)
+    assert updated["uri"] == "/digital_objects/1"
+    assert updated["data"]["title"] == "New Title"
+    captions = {
+        fv["use_statement"]: fv.get("caption") for fv in updated["data"]["file_versions"]
+    }
+    assert captions["image-thumbnail"] == "New Title"
+    assert captions["Persistent-URL"] == "New Title"
+    assert "caption" not in [
+        fv
+        for fv in updated["data"]["file_versions"]
+        if fv["use_statement"] == "Web-Access"
+    ][0]
+
+
+def test_update_digital_object_metadata_no_file_versions_is_noop(monkeypatch):
+    called = {"invoked": False}
+
+    def fake_update_digital_object(uri, data):
+        called["invoked"] = True
+
+    monkeypatch.setattr(
+        alchemist.cascflow, "update_digital_object", fake_update_digital_object
+    )
+    ao = {
+        "component_id": "aspace_1",
+        "title": "New Title",
+        "instances": [{"digital_object": {"_resolved": {"uri": "/digital_objects/1"}}}],
+    }
+    alchemist.update_digital_object_metadata(ao)
+    assert called["invoked"] is False
+
+
+def test_update_digital_object_metadata_no_digital_object_is_noop(monkeypatch):
+    called = {"invoked": False}
+
+    def fake_update_digital_object(uri, data):
+        called["invoked"] = True
+
+    monkeypatch.setattr(
+        alchemist.cascflow, "update_digital_object", fake_update_digital_object
+    )
+    ao = {"component_id": "aspace_1", "title": "New Title", "instances": []}
+    alchemist.update_digital_object_metadata(ao)
+    assert called["invoked"] is False
+
+
+def test_update_digital_object_metadata_multiple_digital_objects_raises(monkeypatch):
+    ao = {
+        "component_id": "aspace_1",
+        "title": "New Title",
+        "instances": [
+            {"digital_object": {"_resolved": {"uri": "/digital_objects/1"}}},
+            {"digital_object": {"_resolved": {"uri": "/digital_objects/2"}}},
+        ],
+    }
+    try:
+        alchemist.update_digital_object_metadata(ao)
+        assert False, "expected ValueError"
+    except ValueError:
+        pass

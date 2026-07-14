@@ -1,5 +1,10 @@
 # Alchemist Changelog
 
+## 3.3.1
+
+- fix Digital Object records not staying in sync when an Archival Object's title changes: metadata-only runs now update the existing Digital Object's title and File Version captions via new `update_digital_object_metadata()`; `create_digital_object_file_versions()` picks up the Digital Object title sync from `cascflow.save_digital_object_file_versions()`
+- pin cascflow to v4.2.1
+
 ## 3.3.0
 
 - add settings.ini validation to the `validate` command (checks required variables are set and usable: binary paths, directories, URLs)
