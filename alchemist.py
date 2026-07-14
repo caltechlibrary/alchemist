@@ -71,6 +71,35 @@ settings_path = None
 config = cascflow.config
 logger = logging.getLogger("alchemist")
 
+ALCHEMIST_SETTINGS_SPEC = [
+    {"key": "AWS_ACCESS_KEY_ID", "kind": "string"},
+    {"key": "AWS_SECRET_ACCESS_KEY", "kind": "string"},
+    {"key": "ALCHEMIST_BUCKET", "kind": "string"},
+    {"key": "ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", "kind": "string", "required": False},
+    {"key": "IIIF_CLOUDFRONT_DISTRIBUTION_ID", "kind": "string", "required": False},
+    {"key": "ALCHEMIST_BASE_URL", "kind": "url"},
+    {"key": "ALCHEMIST_IIIF_ENDPOINT", "kind": "url"},
+    {"key": "ARCHIVESSPACE_PUBLIC_URL", "kind": "url"},
+    {"key": "ARCHIVESSPACE_STAFF_URL", "kind": "url"},
+    {"key": "ARCHIVESSPACE_API_URL", "kind": "url"},
+    {"key": "ARCHIVESSPACE_USERNAME", "kind": "string"},
+    {"key": "ARCHIVESSPACE_PASSWORD", "kind": "string"},
+    {"key": "ARCHIVESSPACE_REPOSITORY_ID", "kind": "int", "required": False},
+    {"key": "OUR_NMA", "kind": "url"},
+    {"key": "OUR_NAAN", "kind": "string"},
+    {"key": "OUR_SHOULDER", "kind": "string"},
+    {"key": "RESOLVER_BUCKET", "kind": "string"},
+    {"key": "MAGICK_CMD", "kind": "executable"},
+    {"key": "VIPS_CMD", "kind": "executable"},
+    {"key": "FFPROBE_CMD", "kind": "executable"},
+    {"key": "FFMPEG_CMD", "kind": "executable"},
+    {"key": "S5CMD_CMD", "kind": "executable"},
+    {"key": "ABSOLUTE_MOUNT_PARENT", "kind": "directory"},
+    {"key": "RELATIVE_SOURCE_DIRECTORY", "kind": "string"},
+    {"key": "RELATIVE_BATCH_DIRECTORY", "kind": "string"},
+    {"key": "FILES_TO_REMOVE", "kind": "csv", "required": False},
+]
+
 
 LINKED_AGENT_ARCHIVAL_RECORD_RELATORS = {
     "abr": "Abridger",
@@ -1561,6 +1590,24 @@ def is_publication_file_supported(entry: Path) -> bool:
         return False
 
 
+def validate_settings_for_publication(settings_validation_results: dict) -> None:
+    missing = settings_validation_results.get("missing", [])
+    invalid = settings_validation_results.get("invalid", [])
+    if missing:
+        message = "❌ REQUIRED SETTINGS NOT SET"
+        logger.error(message)
+        for setting in missing:
+            logger.error(f"❌ {setting['key']}: {setting['detail']}")
+    if invalid:
+        message = "❌ INVALID SETTINGS VALUES"
+        logger.error(message)
+        for setting in invalid:
+            logger.error(f"❌ {setting['key']}: {setting['detail']}")
+    if missing or invalid:
+        raise RuntimeError("❌ SETTINGS VALIDATION FAILED")
+    logger.info("✅ ALL REQUIRED SETTINGS ARE SET AND USABLE")
+
+
 def validate_digital_files_for_publication(
     validation_results: dict, pipeline: str
 ) -> None:
@@ -1674,6 +1721,8 @@ def main():
     # handle the commands
     logger.debug(f"🐞 TARGET: {getattr(args, 'target', None)}")
     if args.command == "validate":
+        settings_validation_results = cascflow.validate_settings(ALCHEMIST_SETTINGS_SPEC)
+        validate_settings_for_publication(settings_validation_results)
         if args.target == "metadata":
             logger.info(args.context)
             cascflow.validate_metadata_identifier(args.context)
@@ -1712,7 +1761,24 @@ def main():
                         # We should only have a single archival object.
                         if arrangement is not None:
                             invalidate_cloudfront_paths(paths=[f"/{our_ark}/*"])
-            # TODO rethink the circumstance of updating metadata for a resource-level identifier
+            # TODO rethink the circumstance of updating metadata for a resource-level identifier.
+            # This whole branch is currently dead: cascflow.validate_metadata_identifier()
+            # is never called with target="metadata" above, so identifier_level can never
+            # come back "resource" and a collection identifier is silently treated as a
+            # single (nonexistent) archival object instead of expanding to its members.
+            # Before wiring this back up, rethink from scratch:
+            #   - Alchemist page paths are now independent per object (/ark:NAAN/name),
+            #     not nested under a shared resource path segment, so the wildcard
+            #     invalidation below (f"/{args.context}/*") can never match anything real
+            #     and per-object invalidation would be needed for every member instead.
+            #   - get_s3_resource_archival_object_paths() (and COMMON_PATH_PREFIX) discovers
+            #     a resource's "published" archival objects by walking an S3 key prefix
+            #     scheme built around the old path pattern. Under the new ARK-based
+            #     paradigm this whole discovery mechanism, and COMMON_PATH_PREFIX itself,
+            #     may no longer be the right approach and could become obsolete.
+            #   - Decide whether external_ark_url should also be persisted back to
+            #     ArchivesSpace here (via update_external_ark_url), as the publication/files
+            #     pipeline already does, once per-object handling is sorted out.
             if validation_results.get("identifier_level") == "resource":
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # Invalidate everything under the resource path component.

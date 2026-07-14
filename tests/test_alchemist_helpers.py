@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 
 import alchemist
 
@@ -371,3 +372,33 @@ def test_generate_iiif_manifest_sets_id_and_thumbnail_urls(monkeypatch, tmp_path
         manifest["thumbnail"]["service"]["@id"]
         == "https://iiif.example.edu/ark:99999/abc123x/0001"
     )
+
+
+def make_settings_validation_results(**overrides):
+    base = {"results": [], "missing": [], "invalid": []}
+    base.update(overrides)
+    return base
+
+
+def test_validate_settings_for_publication_raises_for_missing_settings():
+    settings_validation_results = make_settings_validation_results(
+        missing=[{"key": "ALCHEMIST_BUCKET", "kind": "string", "status": "missing", "detail": "ALCHEMIST_BUCKET is not set"}]
+    )
+
+    with pytest.raises(RuntimeError, match="SETTINGS VALIDATION FAILED"):
+        alchemist.validate_settings_for_publication(settings_validation_results)
+
+
+def test_validate_settings_for_publication_raises_for_invalid_settings():
+    settings_validation_results = make_settings_validation_results(
+        invalid=[{"key": "MAGICK_CMD", "kind": "executable", "status": "invalid", "detail": "magick not found"}]
+    )
+
+    with pytest.raises(RuntimeError, match="SETTINGS VALIDATION FAILED"):
+        alchemist.validate_settings_for_publication(settings_validation_results)
+
+
+def test_validate_settings_for_publication_happy_path_no_exception():
+    settings_validation_results = make_settings_validation_results()
+
+    alchemist.validate_settings_for_publication(settings_validation_results)
