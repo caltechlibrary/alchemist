@@ -1,5 +1,10 @@
 # Alchemist Changelog
 
+## 3.4.1
+
+- fix `_update_pyramid_tiff_metadata()` resetting `ContentType` to a service default when attaching pyramid TIFF metadata (`copy_object` with `MetadataDirective="REPLACE"` doesn't preserve system metadata that isn't explicitly repeated); the existing `ContentType` is now read via `head_object()` and passed through
+- add `scripts/backfill_pyramid_tiff_metadata.py`, a standalone one-off tool to attach `x-amz-meta-width`/`height`/`pages`/`tilesize` to pyramid TIFFs published before that metadata was written at publish time; reads image dimensions directly from each object's TIFF IFD via small S3 Range GETs rather than downloading files
+
 ## 3.4.0
 
 - attach `x-amz-meta-width`/`height`/`pages`/`tilesize` to pyramid TIFFs on publish, so `serverless-iiif` can read image geometry from S3 object metadata instead of recalculating it on every request
