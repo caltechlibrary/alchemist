@@ -1,5 +1,9 @@
 # Alchemist Changelog
 
+## 3.4.3
+
+- fix `OUR_SHOULDER` incorrectly marked required in `ALCHEMIST_SETTINGS_SPEC` (`get_our_ark()` already treats a blank shoulder as valid); `validate` was failing for deployments that don't set one
+
 ## 3.4.2
 
 - set `ContentType` to `image/tiff` explicitly on pyramid TIFFs (both the forward publish path and the backfill script), instead of preserving s5cmd's generic `application/octet-stream` fallback for the unrecognized `.ptif` extension; `_update_pyramid_tiff_metadata()` no longer needs a `head_object()` call now that the value is fixed and known up front
