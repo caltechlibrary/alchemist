@@ -1,5 +1,10 @@
 # Alchemist Changelog
 
+## 3.4.5
+
+- log unhandled exceptions through the standard logger (`❌ UNEXPECTED ERROR: ...`) before re-raising, so a crash always leaves a clean error line in the console log instead of jumping straight to a bare traceback
+- demote the settings-validation success message to DEBUG so the first line of output is the identifier/summary line (or a real error)
+
 ## 3.4.4
 
 
