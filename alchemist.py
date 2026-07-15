@@ -772,15 +772,15 @@ def _update_pyramid_tiff_metadata(
     key = f"{our_ark}/{metadata_file.name.removesuffix('.metadata.json')}"
     # MetadataDirective="REPLACE" resets ContentType (and any other system
     # metadata not explicitly repeated) to a service default rather than
-    # preserving it -- explicitly carry the existing value forward.
-    content_type = s3_client.head_object(Bucket=bucket, Key=key)["ContentType"]
+    # preserving it -- pyramid TIFFs should always be image/tiff rather than
+    # s5cmd's generic application/octet-stream fallback for the .ptif extension.
     s3_client.copy_object(
         Bucket=bucket,
         Key=key,
         CopySource={"Bucket": bucket, "Key": key},
         Metadata={name: str(value) for name, value in metadata.items()},
         MetadataDirective="REPLACE",
-        ContentType=content_type,
+        ContentType="image/tiff",
     )
     logger.debug(f"🐞 S3 METADATA UPDATED: {key} {metadata}")
 

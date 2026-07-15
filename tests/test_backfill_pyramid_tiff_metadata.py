@@ -134,10 +134,16 @@ def test_backfill_object_dry_run_does_not_call_copy_object():
     assert client.copy_calls == []
 
 
-def test_backfill_object_copy_preserves_content_type_and_sets_metadata():
+def test_backfill_object_forces_image_tiff_content_type_and_sets_metadata():
     body = build_minimal_tiff(800, 500)
     client = FakeS3Client(
-        {"a.ptif": {"body": body, "content_type": "image/tiff", "metadata": {}}}
+        {
+            "a.ptif": {
+                "body": body,
+                "content_type": "application/octet-stream",
+                "metadata": {},
+            }
+        }
     )
     result = backfill.backfill_object(client, "bucket", "a.ptif", dry_run=False)
     assert result == "updated"

@@ -10,7 +10,8 @@
 #
 # IMPORTANT: copy_object(..., MetadataDirective="REPLACE") resets ContentType
 # to a service default unless explicitly re-specified -- this script always
-# reads and re-passes the object's existing ContentType.
+# sets it to "image/tiff" explicitly, correcting s5cmd's generic
+# application/octet-stream fallback for the unrecognized .ptif extension.
 
 import argparse
 import logging
@@ -133,7 +134,7 @@ def backfill_object(s3_client, bucket: str, key: str, dry_run: bool) -> str:
         CopySource={"Bucket": bucket, "Key": key},
         Metadata=metadata,
         MetadataDirective="REPLACE",
-        ContentType=head.get("ContentType", "application/octet-stream"),
+        ContentType="image/tiff",
     )
     return "updated"
 
