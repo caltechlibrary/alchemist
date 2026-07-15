@@ -1,5 +1,8 @@
 # Alchemist Changelog
 
+## 3.4.4
+
+
 ## 3.4.3
 
 - fix `OUR_SHOULDER` incorrectly marked required in `ALCHEMIST_SETTINGS_SPEC` (`get_our_ark()` already treats a blank shoulder as valid); `validate` was failing for deployments that don't set one
