@@ -1,5 +1,10 @@
 # Alchemist Changelog
 
+## 3.4.0
+
+- attach `x-amz-meta-width`/`height`/`pages`/`tilesize` to pyramid TIFFs on publish, so `serverless-iiif` can read image geometry from S3 object metadata instead of recalculating it on every request
+- `create_pyramid_tiff()` writes a `.metadata.json` sidecar with the computed values; `publish_archival_object_access_files()` applies them via a threaded, same-key S3 metadata copy after the bulk `s5cmd sync` (which only supports one uniform `--metadata` value per batch)
+
 ## 3.3.1
 
 - fix Digital Object records not staying in sync when an Archival Object's title changes: metadata-only runs now update the existing Digital Object's title and File Version captions via new `update_digital_object_metadata()`; `create_digital_object_file_versions()` picks up the Digital Object title sync from `cascflow.save_digital_object_file_versions()`
