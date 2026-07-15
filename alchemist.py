@@ -97,7 +97,7 @@ ALCHEMIST_SETTINGS_SPEC = [
     {"key": "ARCHIVESSPACE_REPOSITORY_ID", "kind": "int", "required": False},
     {"key": "OUR_NMA", "kind": "url"},
     {"key": "OUR_NAAN", "kind": "string"},
-    {"key": "OUR_SHOULDER", "kind": "string"},
+    {"key": "OUR_SHOULDER", "kind": "string", "required": False},
     {"key": "RESOLVER_BUCKET", "kind": "string"},
     {"key": "MAGICK_CMD", "kind": "executable"},
     {"key": "VIPS_CMD", "kind": "executable"},

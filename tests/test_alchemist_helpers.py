@@ -519,3 +519,10 @@ def test_validate_settings_for_publication_happy_path_no_exception():
     settings_validation_results = make_settings_validation_results()
 
     alchemist.validate_settings_for_publication(settings_validation_results)
+
+
+def test_alchemist_settings_spec_marks_our_shoulder_optional():
+    spec_entry = next(
+        item for item in alchemist.ALCHEMIST_SETTINGS_SPEC if item["key"] == "OUR_SHOULDER"
+    )
+    assert spec_entry.get("required") is False
