@@ -1,5 +1,9 @@
 # Alchemist Changelog
 
+## 3.4.2
+
+- set `ContentType` to `image/tiff` explicitly on pyramid TIFFs (both the forward publish path and the backfill script), instead of preserving s5cmd's generic `application/octet-stream` fallback for the unrecognized `.ptif` extension; `_update_pyramid_tiff_metadata()` no longer needs a `head_object()` call now that the value is fixed and known up front
+
 ## 3.4.1
 
 - fix `_update_pyramid_tiff_metadata()` resetting `ContentType` to a service default when attaching pyramid TIFF metadata (`copy_object` with `MetadataDirective="REPLACE"` doesn't preserve system metadata that isn't explicitly repeated); the existing `ContentType` is now read via `head_object()` and passed through
