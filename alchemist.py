@@ -5,6 +5,7 @@ import argparse
 import datetime
 import json
 import logging
+import math
 import mimetypes
 import shutil
 import subprocess
@@ -12,17 +13,26 @@ import tempfile
 import time
 
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import boto3  # pypi: boto3
 import jinja2  # pypi: Jinja2
 
+from botocore.config import Config as BotoClientConfig  # pypi: boto3
 from decouple import Config, RepositoryIni  # pypi: python-decouple
 
 import arkminter
 import cascflow
+
+# tile size (in pixels) used for both generating pyramid TIFFs (vips) and
+# calculating the resulting pyramid level ("pages") count for serverless-iiif
+PYRAMID_TILE_SIZE = 256
+
+# worker threads for attaching x-amz-meta- headers to pyramid TIFFs already
+# in S3; these are network-bound metadata-only copies, not data transfer
+PYRAMID_TIFF_METADATA_MAX_WORKERS = 20
 
 parser = argparse.ArgumentParser(
     description="Publication workflow for Caltech Archives."
@@ -700,6 +710,8 @@ def publish_archival_object_access_files(
             [
                 config("S5CMD_CMD"),
                 "sync",
+                "--exclude",
+                "*.metadata.json",
                 f"{build_directory.name}/{archival_object_access_path}/*",
                 f"s3://{config('ALCHEMIST_BUCKET')}/{our_ark}/",
             ],
@@ -718,6 +730,54 @@ def publish_archival_object_access_files(
         logger.debug("🐞 S5CMD STDOUT:", e.stdout)
         logger.debug("🐞 S5CMD STDERR:", e.stderr)
         raise
+    # pyramid TIFFs carry a `.metadata.json` sidecar (written by
+    # create_pyramid_tiff()) with width/height/pages, so serverless-iiif can
+    # read them back as x-amz-meta- headers instead of recalculating them on
+    # every image request. `s5cmd sync --metadata` only accepts one uniform
+    # value for the whole batch, so metadata is attached per-file here via a
+    # same-key S3 copy (no bulk transfer involved, so plain boto3 rather
+    # than s5cmd, which is used above for its parallel bulk-transfer speed).
+    # These are network-bound, not CPU-bound, so a thread pool (rather than
+    # the ProcessPoolExecutor used elsewhere in this file) is dispatched to
+    # overlap the request latency across many files at once; the client's
+    # connection pool is sized to match so threads aren't left waiting on it.
+    bucket = config("ALCHEMIST_BUCKET")
+    s3_client = boto3.client(
+        "s3",
+        aws_access_key_id=config("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=config("AWS_SECRET_ACCESS_KEY"),
+        config=BotoClientConfig(max_pool_connections=PYRAMID_TIFF_METADATA_MAX_WORKERS),
+    )
+    metadata_files = list(
+        Path(build_directory.name, archival_object_access_path).glob(
+            "*.ptif.metadata.json"
+        )
+    )
+    with ThreadPoolExecutor(max_workers=PYRAMID_TIFF_METADATA_MAX_WORKERS) as executor:
+        list(
+            executor.map(
+                lambda metadata_file: _update_pyramid_tiff_metadata(
+                    s3_client, bucket, our_ark, metadata_file
+                ),
+                metadata_files,
+            )
+        )
+
+
+def _update_pyramid_tiff_metadata(
+    s3_client, bucket: str, our_ark: str, metadata_file: Path
+) -> None:
+    with open(metadata_file) as f:
+        metadata = json.load(f)
+    key = f"{our_ark}/{metadata_file.name.removesuffix('.metadata.json')}"
+    s3_client.copy_object(
+        Bucket=bucket,
+        Key=key,
+        CopySource={"Bucket": bucket, "Key": key},
+        Metadata={name: str(value) for name, value in metadata.items()},
+        MetadataDirective="REPLACE",
+    )
+    logger.debug(f"🐞 S3 METADATA UPDATED: {key} {metadata}")
 
 
 def format_archival_object_creators_display(archival_object):
@@ -1212,6 +1272,16 @@ def generate_iiif_manifest(
     logger.debug(f"🐞 MANIFEST FILE GENERATED: {manifest_file}")
 
 
+def calculate_pyramid_pages(
+    width: int, height: int, tile_size: int = PYRAMID_TILE_SIZE
+) -> int:
+    """Calculate the number of pyramid levels vips will generate for an
+    image of the given dimensions and tile size (serverless-iiif's "pages")."""
+    return max(
+        1, math.ceil(math.log(max(width, height) / tile_size, 2)) + 1
+    )
+
+
 def create_pyramid_tiff(
     build_directory: tempfile.TemporaryDirectory[str],
     filepath: Path,
@@ -1226,15 +1296,19 @@ def create_pyramid_tiff(
                 config("MAGICK_CMD"),
                 "identify",
                 "-format",
-                "%m",
+                "%m*%w*%h",
                 filepath.as_posix(),
             ],
             capture_output=True,
             check=True,
             text=True,
         )
+        image_format, image_width, image_height = magick_identify.stdout.strip().split(
+            "*"
+        )
+        image_width, image_height = int(image_width), int(image_height)
 
-        if magick_identify.stdout.strip() == "JP2":
+        if image_format == "JP2":
             vips_source_image = (
                 Path(build_directory.name)
                 .joinpath(f"{filepath.stem}.tmp.tiff")
@@ -1277,15 +1351,26 @@ def create_pyramid_tiff(
                 "--compression",
                 "jpeg",
                 "--tile-width",
-                "256",
+                str(PYRAMID_TILE_SIZE),
                 "--tile-height",
-                "256",
+                str(PYRAMID_TILE_SIZE),
             ],
             capture_output=True,
             text=True,
             check=True,
         )
         logger.debug(f"🐞 PYRAMID TIFF CREATED: {pyramid_tiff_file}")
+        pyramid_tiff_metadata_file = f"{pyramid_tiff_file}.metadata.json"
+        with open(pyramid_tiff_metadata_file, "w") as f:
+            json.dump(
+                {
+                    "width": image_width,
+                    "height": image_height,
+                    "pages": calculate_pyramid_pages(image_width, image_height),
+                    "tilesize": PYRAMID_TILE_SIZE,
+                },
+                f,
+            )
         if vips_source_image.endswith(".tmp.tiff"):
             Path(vips_source_image).unlink()
     except Exception as e:

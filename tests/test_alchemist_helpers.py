@@ -200,6 +200,18 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
     arrangement = {"collection_id": "collection_1"}
     commands = []
 
+    access_path = Path(build_directory.name, "collection_1", "aspace_1")
+    access_path.mkdir(parents=True)
+    (access_path / "1.ptif.metadata.json").write_text(
+        json.dumps({"width": 4096, "height": 4096, "pages": 5, "tilesize": 256})
+    )
+    (access_path / "2.ptif.metadata.json").write_text(
+        json.dumps({"width": 2048, "height": 1024, "pages": 4, "tilesize": 256})
+    )
+    (access_path / "3.ptif.metadata.json").write_text(
+        json.dumps({"width": 512, "height": 512, "pages": 2, "tilesize": 256})
+    )
+
     monkeypatch.setattr(
         alchemist,
         "config",
@@ -218,6 +230,16 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
 
     monkeypatch.setattr(alchemist.subprocess, "run", fake_run)
 
+    copy_calls = []
+
+    class FakeS3Client:
+        def copy_object(self, **kwargs):
+            copy_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        alchemist.boto3, "client", lambda *args, **kwargs: FakeS3Client()
+    )
+
     alchemist.publish_archival_object_access_files(
         build_directory, archival_object, arrangement
     )
@@ -227,6 +249,8 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
     assert command == [
         "s5cmd",
         "sync",
+        "--exclude",
+        "*.metadata.json",
         build_directory.name + "/collection_1/aspace_1/*",
         "s3://bucket-name/ark:99999/abc123x/",
     ]
@@ -235,6 +259,96 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
     assert kwargs["capture_output"] is True
     assert kwargs["check"] is True
     assert kwargs["text"] is True
+
+    # threaded dispatch means completion order isn't guaranteed; sort by Key
+    assert sorted(copy_calls, key=lambda call: call["Key"]) == [
+        {
+            "Bucket": "bucket-name",
+            "Key": "ark:99999/abc123x/1.ptif",
+            "CopySource": {"Bucket": "bucket-name", "Key": "ark:99999/abc123x/1.ptif"},
+            "Metadata": {
+                "width": "4096",
+                "height": "4096",
+                "pages": "5",
+                "tilesize": "256",
+            },
+            "MetadataDirective": "REPLACE",
+        },
+        {
+            "Bucket": "bucket-name",
+            "Key": "ark:99999/abc123x/2.ptif",
+            "CopySource": {"Bucket": "bucket-name", "Key": "ark:99999/abc123x/2.ptif"},
+            "Metadata": {
+                "width": "2048",
+                "height": "1024",
+                "pages": "4",
+                "tilesize": "256",
+            },
+            "MetadataDirective": "REPLACE",
+        },
+        {
+            "Bucket": "bucket-name",
+            "Key": "ark:99999/abc123x/3.ptif",
+            "CopySource": {"Bucket": "bucket-name", "Key": "ark:99999/abc123x/3.ptif"},
+            "Metadata": {
+                "width": "512",
+                "height": "512",
+                "pages": "2",
+                "tilesize": "256",
+            },
+            "MetadataDirective": "REPLACE",
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    "width, height, expected_pages",
+    [
+        (4096, 4096, 5),
+        (256, 256, 1),
+        (100, 50, 1),
+        (10000, 256, 7),
+    ],
+)
+def test_calculate_pyramid_pages(width, height, expected_pages):
+    assert alchemist.calculate_pyramid_pages(width, height) == expected_pages
+
+
+def test_create_pyramid_tiff_writes_metadata_sidecar(monkeypatch, tmp_path):
+    build_directory = SimpleNamespace(name=str(tmp_path))
+    filepath = tmp_path / "source.tiff"
+    filepath.write_bytes(b"")
+    archival_object = {"component_id": "aspace_1"}
+    arrangement = {"collection_id": "collection_1"}
+    Path(tmp_path, "collection_1", "aspace_1").mkdir(parents=True)
+
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "MAGICK_CMD": "magick",
+            "VIPS_CMD": "vips",
+        }.get(key, kwargs.get("default")),
+    )
+
+    def fake_run(cmd, **kwargs):
+        if "identify" in cmd:
+            return SimpleNamespace(stdout="TIFF*4096*4096")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(alchemist.subprocess, "run", fake_run)
+
+    alchemist.create_pyramid_tiff(
+        build_directory, filepath, archival_object, arrangement, "1"
+    )
+
+    metadata_file = Path(tmp_path, "collection_1", "aspace_1", "1.ptif.metadata.json")
+    assert json.loads(metadata_file.read_text()) == {
+        "width": 4096,
+        "height": 4096,
+        "pages": 5,
+        "tilesize": 256,
+    }
 
 
 def test_generate_archival_object_page_builds_ark_manifest_url(monkeypatch, tmp_path):
