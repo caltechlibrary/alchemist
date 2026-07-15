@@ -233,6 +233,9 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
     copy_calls = []
 
     class FakeS3Client:
+        def head_object(self, **kwargs):
+            return {"ContentType": "image/tiff"}
+
         def copy_object(self, **kwargs):
             copy_calls.append(kwargs)
 
@@ -273,6 +276,7 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
                 "tilesize": "256",
             },
             "MetadataDirective": "REPLACE",
+            "ContentType": "image/tiff",
         },
         {
             "Bucket": "bucket-name",
@@ -285,6 +289,7 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
                 "tilesize": "256",
             },
             "MetadataDirective": "REPLACE",
+            "ContentType": "image/tiff",
         },
         {
             "Bucket": "bucket-name",
@@ -297,6 +302,7 @@ def test_publish_archival_object_access_files_syncs_to_ark_path(monkeypatch):
                 "tilesize": "256",
             },
             "MetadataDirective": "REPLACE",
+            "ContentType": "image/tiff",
         },
     ]
 
