@@ -619,7 +619,7 @@ def create_digital_object_file_versions(
             "jsonmodel_type": "file_version",
             # NOTE caption appears as the Additional File Versions link text on the Digital Object record in the Public UI;
             # without the caption the Additional File Versions link text is the use_statement value
-            "caption": f"{archival_object['title']}",
+            "caption": archival_object["title"],
             "publish": True,
             "use_statement": "Persistent-URL",
         },
@@ -1073,7 +1073,7 @@ def generate_archival_object_page(
                     archivesspace_public_url=config("ARCHIVESSPACE_PUBLIC_URL"),
                     archival_object_uri=archival_object["uri"],
                     iiif_manifest_url=iiif_manifest_url,
-                    iiif_manifest_json=json.dumps({"manifest": f"{iiif_manifest_url}"}),
+                    iiif_manifest_json=json.dumps({"manifest": iiif_manifest_url}),
                     rights=RIGHTS_NOTICE_HTML,
                 )
             )
