@@ -1,5 +1,10 @@
 # Alchemist Changelog
 
+## 3.4.6
+
+- pin cascflow to v4.2.2, which types `config()` with `decouple`'s real overloads instead of an untyped passthrough
+- drop redundant f-string wraps around already-string values
+
 ## 3.4.5
 
 - log unhandled exceptions through the standard logger (`❌ UNEXPECTED ERROR: ...`) before re-raising, so a crash always leaves a clean error line in the console log instead of jumping straight to a bare traceback
