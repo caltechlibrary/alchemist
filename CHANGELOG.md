@@ -1,5 +1,9 @@
 # Alchemist Changelog
 
+## 3.4.7
+
+- use cascflow's shared `invalidate_cloudfront_paths()` instead of a local copy; pin cascflow to v4.3.2
+
 ## 3.4.6
 
 - pin cascflow to v4.2.2, which types `config()` with `decouple`'s real overloads instead of an untyped passthrough
