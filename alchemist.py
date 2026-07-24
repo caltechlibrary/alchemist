@@ -10,7 +10,6 @@ import mimetypes
 import shutil
 import subprocess
 import tempfile
-import time
 
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -391,38 +390,6 @@ RIGHTS_NOTICE_HTML = '<p>These digitized collections are accessible for purposes
 def _worker_init(sp: str) -> None:
     """Initialize worker process config from a settings.ini path (sp)."""
     cascflow.set_config(Config(RepositoryIni(sp)))
-
-
-def invalidate_cloudfront_paths(distribution=None, paths=None, caller_reference=None):
-    if distribution is None:
-        distribution = config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID")
-    if not caller_reference:
-        caller_reference = str(time.time())
-    cloudfront_client = boto3.client(
-        "cloudfront",
-        aws_access_key_id=config("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=config("AWS_SECRET_ACCESS_KEY"),
-    )
-    if paths is None:
-        paths = ["/*"]
-    quantity = len(paths)
-    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/cloudfront/client/create_invalidation.html
-    response = cloudfront_client.create_invalidation(
-        DistributionId=distribution,
-        InvalidationBatch={
-            "Paths": {"Quantity": quantity, "Items": paths},
-            "CallerReference": caller_reference,
-        },
-    )
-    logger.debug(f"🐞 CLOUDFRONT INVALIDATION RESPONSE: {str(response)}")
-    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/cloudfront/waiter/InvalidationCompleted.html
-    waiter = cloudfront_client.get_waiter("invalidation_completed")
-    logger.debug("🐞 WAITING ON CLOUDFRONT INVALIDATION")
-    waiter.wait(
-        DistributionId=distribution,
-        Id=response["Invalidation"]["Id"],
-    )
-    logger.debug("🐞 CLOUDFRONT INVALIDATION COMPLETE")
 
 
 def create_canvas_metadata(
@@ -1892,7 +1859,12 @@ def main():
                     if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                         # We should only have a single archival object.
                         if arrangement is not None:
-                            invalidate_cloudfront_paths(paths=[f"/{our_ark}/*"])
+                            cascflow.invalidate_cloudfront_paths(
+                                distribution=config(
+                                    "ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID"
+                                ),
+                                paths=[f"/{our_ark}/*"],
+                            )
             # TODO rethink the circumstance of updating metadata for a resource-level identifier.
             # This whole branch is currently dead: cascflow.validate_metadata_identifier()
             # is never called with target="metadata" above, so identifier_level can never
@@ -1914,7 +1886,10 @@ def main():
             if validation_results.get("identifier_level") == "resource":
                 if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
                     # Invalidate everything under the resource path component.
-                    invalidate_cloudfront_paths(paths=[f"/{args.context}/*"])
+                    cascflow.invalidate_cloudfront_paths(
+                        distribution=config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID"),
+                        paths=[f"/{args.context}/*"],
+                    )
         else:
             # Our target is either "publication" or "files". The context is the volume name.
             batch_set_id = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
@@ -1975,13 +1950,16 @@ def main():
                         )
                     )
             if args.target == "files" and cloudfront_invalidation_batch:
-                invalidate_cloudfront_paths(paths=cloudfront_invalidation_batch)
+                cascflow.invalidate_cloudfront_paths(
+                    distribution=config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID"),
+                    paths=cloudfront_invalidation_batch,
+                )
                 for path in cloudfront_invalidation_batch:
                     # prepend /iiif/2 to each path
                     cloudfront_invalidation_batch[
                         cloudfront_invalidation_batch.index(path)
                     ] = f"/iiif/2{path}"
-                invalidate_cloudfront_paths(
+                cascflow.invalidate_cloudfront_paths(
                     distribution=config("IIIF_CLOUDFRONT_DISTRIBUTION_ID"),
                     paths=cloudfront_invalidation_batch,
                 )
