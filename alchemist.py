@@ -508,26 +508,9 @@ def get_thumbnail_url(
     )
 
 
-def create_digital_object_file_versions(
-    build_directory: tempfile.TemporaryDirectory[str],
-    filepaths: list[Path],
-    archival_object: dict,
-    arrangement: dict,
-    sequenced_filepaths: dict[str, Path],
-) -> None:
-    logger.debug(f"🐞 ARCHIVAL_OBJECT: {archival_object['component_id']}")
-    logger.debug(f"🐞 BUILD_DIRECTORY: {build_directory}")
-
-    archival_object_directory = (
-        Path(build_directory.name)
-        .joinpath(
-            arrangement["collection_id"],
-            archival_object["component_id"],
-        )
-        .resolve(strict=True)
-    )
-    logger.debug(f"🐞 ARCHIVAL_OBJECT_DIRECTORY: {archival_object_directory}")
-
+def build_current_file_versions(
+    archival_object: dict, arrangement: dict, sequenced_filepaths: dict[str, Path]
+) -> list[dict]:
     archival_object_page_url = "/".join(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
@@ -542,23 +525,8 @@ def create_digital_object_file_versions(
     )
     logger.info(f"✨ ARCHIVAL OBJECT PAGE URL: {archival_object_page_url}")
 
-    filepaths = [
-        f.absolute()
-        for f in archival_object_directory.iterdir()
-        if f.is_file() and (f.name.endswith(".ptif") or f.name.endswith(".mp4"))
-    ]
-    logger.debug(f"🐞 FILEPATHS[0]: {sorted(filepaths)[0]}")
-
-    if filepaths[0].name.endswith(".ptif"):
-        digital_object_type = "still_image"
-    elif filepaths[0].name.endswith(".mp4"):
-        digital_object_type = "moving_image"
-    elif filepaths[0].name.endswith(".mp3"):
-        digital_object_type = "sound_recording"
-    else:
-        digital_object_type = ""
-
-    file_versions = [
+    filepaths = list(sequenced_filepaths.values())
+    return [
         # NOTE thumbnail must come first so that it gets linked to the other published file version
         # > When a Digital Object or Digital Object Component record contains
         # > multiple published File Versions, the order of the File Versions
@@ -596,6 +564,47 @@ def create_digital_object_file_versions(
             "use_statement": "Web-Access",
         },
     ]
+
+
+def create_digital_object_file_versions(
+    build_directory: tempfile.TemporaryDirectory[str],
+    filepaths: list[Path],
+    archival_object: dict,
+    arrangement: dict,
+    sequenced_filepaths: dict[str, Path],
+) -> None:
+    logger.debug(f"🐞 ARCHIVAL_OBJECT: {archival_object['component_id']}")
+    logger.debug(f"🐞 BUILD_DIRECTORY: {build_directory}")
+
+    archival_object_directory = (
+        Path(build_directory.name)
+        .joinpath(
+            arrangement["collection_id"],
+            archival_object["component_id"],
+        )
+        .resolve(strict=True)
+    )
+    logger.debug(f"🐞 ARCHIVAL_OBJECT_DIRECTORY: {archival_object_directory}")
+
+    filepaths = [
+        f.absolute()
+        for f in archival_object_directory.iterdir()
+        if f.is_file() and (f.name.endswith(".ptif") or f.name.endswith(".mp4"))
+    ]
+    logger.debug(f"🐞 FILEPATHS[0]: {sorted(filepaths)[0]}")
+
+    if filepaths[0].name.endswith(".ptif"):
+        digital_object_type = "still_image"
+    elif filepaths[0].name.endswith(".mp4"):
+        digital_object_type = "moving_image"
+    elif filepaths[0].name.endswith(".mp3"):
+        digital_object_type = "sound_recording"
+    else:
+        digital_object_type = ""
+
+    file_versions = build_current_file_versions(
+        archival_object, arrangement, sequenced_filepaths
+    )
 
     digital_object_count = len(
         [i for i in archival_object["instances"] if "digital_object" in i.keys()]
@@ -1063,6 +1072,121 @@ def get_sequence_indicator(filepath):
     return f"{padded}{suffix}".lower()
 
 
+def get_published_web_access_url(archival_object: dict) -> str | None:
+    """Return the current "Web-Access" file_version URL on the digital_object,
+    if any. Only create_digital_object_file_versions() (a full files/publication
+    run) rewrites this, so it reflects wherever the object's manifest.json
+    actually lives -- ARK-based once migrated, or still the pre-migration path
+    if no such run has happened since."""
+    digital_object_instances = [
+        instance
+        for instance in archival_object.get("instances", [])
+        if "digital_object" in instance.keys()
+    ]
+    if not digital_object_instances:
+        return None
+    file_versions = (
+        digital_object_instances[0]["digital_object"]["_resolved"].get("file_versions")
+        or []
+    )
+    for file_version in file_versions:
+        if file_version.get("use_statement") == "Web-Access":
+            return file_version.get("file_uri")
+    return None
+
+
+def migrate_legacy_s3_object(
+    archival_object: dict, our_ark: str, copy_ptifs: bool
+) -> dict[str, Path] | None:
+    """Migrate the S3 objects off Alchemist's pre-ARK-migration layout
+    (index.html/manifest.json/*.ptif under a component_id-based key, per the
+    digital object's Web-Access file_version) to the ARK-based layout. Writes
+    zero-byte WebsiteRedirectLocation markers at the legacy keys so old
+    bookmarks/search-engine links keep working. When copy_ptifs, also S3-copies
+    (no image reprocessing) the existing ptifs/mp4s to the new ARK key -- used
+    by the metadata-only pipeline, which generates no fresh derivatives itself;
+    the full publish/files pipeline passes copy_ptifs=False since it already
+    uploaded fresh derivatives straight to the ARK key. Does not touch the
+    digital object record itself -- callers rebuild and save its file_versions
+    separately using the returned sequence map.
+
+    Returns a sequenced_filepaths-shaped dict (sequence indicator -> Path,
+    for build_current_file_versions()) if a migration was performed, or None
+    if the object was already ARK-based (no-op)."""
+    web_access_url = get_published_web_access_url(archival_object)
+    if not web_access_url or our_ark in web_access_url:
+        return None
+
+    base_url = config("ALCHEMIST_BASE_URL").rstrip("/") + "/"
+    if not web_access_url.startswith(base_url):
+        logger.warning(
+            "⚠️ Web-Access URL IS NOT ALCHEMIST_BASE_URL-RELATIVE, SKIPPING "
+            f"MIGRATION: {web_access_url}"
+        )
+        return None
+    legacy_prefix = web_access_url[len(base_url) :]
+    bucket = config("ALCHEMIST_BUCKET")
+
+    legacy_keys = cascflow.s3_list_object_keys(bucket, f"{legacy_prefix}/")
+    legacy_derivative_filenames = [
+        key.rsplit("/", 1)[-1] for key in legacy_keys if key.endswith((".ptif", ".mp4"))
+    ]
+    if not legacy_derivative_filenames:
+        logger.error(
+            f"❌ NO *.ptif/*.mp4 FOUND UNDER LEGACY PREFIX, CANNOT MIGRATE: {legacy_prefix}"
+        )
+        return None
+    sequenced_filepaths = {
+        get_sequence_indicator(Path(filename)): Path(filename)
+        for filename in sorted(legacy_derivative_filenames, key=lambda f: get_sequence_indicator(Path(f)))
+    }
+
+    # The new key's filename must be {indicator}{suffix}, matching how
+    # get_thumbnail_url()/build_current_file_versions() construct the
+    # ARK-based IIIF identifier from the indicator alone -- legacy filenames
+    # don't necessarily already follow that convention (pre-ARK naming used
+    # the source file's own stem), so copies rename rather than preserve.
+    if copy_ptifs:
+        for indicator, legacy_path in sequenced_filepaths.items():
+            new_filename = f"{indicator}{legacy_path.suffix}"
+            cascflow.s3_copy_object(
+                bucket,
+                f"{legacy_prefix}/{legacy_path.name}",
+                f"{our_ark}/{new_filename}",
+            )
+            legacy_metadata_key = f"{legacy_prefix}/{legacy_path.name}.metadata.json"
+            if legacy_metadata_key in legacy_keys:
+                cascflow.s3_copy_object(
+                    bucket, legacy_metadata_key, f"{our_ark}/{new_filename}.metadata.json"
+                )
+
+    cascflow.s3_put_object(
+        bucket,
+        f"{legacy_prefix}/index.html",
+        website_redirect_location=f"https://{config('OUR_NMA')}/{our_ark}",
+    )
+    cascflow.s3_put_object(
+        bucket,
+        f"{legacy_prefix}/manifest.json",
+        website_redirect_location=f"{config('ALCHEMIST_BASE_URL').rstrip('/')}/{our_ark}/manifest.json",
+    )
+    for indicator, legacy_path in sequenced_filepaths.items():
+        if legacy_path.suffix == ".ptif":
+            # S3's PutObject requires WebsiteRedirectLocation to start with
+            # "http://", "https://", or "/" -- a bare identifier isn't
+            # accepted, so store it as a bucket-relative path.
+            cascflow.s3_put_object(
+                bucket,
+                f"{legacy_prefix}/{legacy_path.name}",
+                website_redirect_location=f"/{our_ark}/{indicator}",
+            )
+
+    logger.info(
+        f"✨ MIGRATED LEGACY ARCHIVAL OBJECT TO ARK-BASED LAYOUT: {legacy_prefix} -> {our_ark}"
+    )
+    return sequenced_filepaths
+
+
 def generate_iiif_manifest(
     build_directory: tempfile.TemporaryDirectory[str],
     filepaths: list[Path],
@@ -1153,7 +1277,7 @@ def generate_iiif_manifest(
                 attribution = note_contents
     # Use an existing manifiest file if we are only updating metadata and have no filepaths.
     if not sequenced_filepaths:
-        manifest_key = "/".join(
+        ark_manifest_key = "/".join(
             [
                 # TODO handle potential ARK Qualifier upstream
                 archival_object["external_ark_url"]
@@ -1165,6 +1289,23 @@ def generate_iiif_manifest(
                 "manifest.json",
             ]
         )
+        # The digital_object's "Web-Access" file_version records wherever its
+        # manifest was actually last published -- ARK-based if it has already
+        # been through a `files`/`publication` run since the ARK migration,
+        # or still the pre-migration path if it hasn't. Only a full
+        # `files`/`publication` run (create_digital_object_file_versions())
+        # rewrites this URL, so it is the authoritative current location,
+        # not something to reconstruct from config.
+        web_access_url = get_published_web_access_url(archival_object)
+        if web_access_url:
+            manifest_key = (
+                web_access_url.split(config("ALCHEMIST_BASE_URL").rstrip("/") + "/", 1)[
+                    -1
+                ]
+                + "/manifest.json"
+            )
+        else:
+            manifest_key = ark_manifest_key
         response = cascflow.s3_get_object(config("ALCHEMIST_BUCKET"), manifest_key)
         if response is None:
             raise FileNotFoundError(
@@ -1175,6 +1316,18 @@ def generate_iiif_manifest(
                 "manifest, not simply an object that was never published"
             )
         manifest = json.loads(response["Body"].read())
+        if manifest_key != ark_manifest_key:
+            # First metadata-only touch since the object's last publication
+            # predates the ARK migration -- migrate the manifest to the
+            # ARK-based key (it gets synced there below by the normal save/
+            # publish flow). Its embedded image URLs are left untouched;
+            # those only get migrated by a full files/publication run.
+            logger.info(
+                f"✨ MIGRATING MANIFEST FROM LEGACY KEY {manifest_key} TO {ark_manifest_key}"
+            )
+            manifest["@id"] = "/".join(
+                [config("ALCHEMIST_BASE_URL").rstrip("/"), ark_manifest_key]
+            )
     else:
         # TODO manifest @id should be the resolver link, not a direct link to
         # the manifest file; ensure Suffix Passthrough on resolver and that our
@@ -1913,7 +2066,21 @@ def main():
                 publish_archival_object_access_files(
                     build_directory, archival_object, arrangement
                 )
-                update_digital_object_metadata(archival_object)
+                # migrate_legacy_s3_object() reads the digital object's
+                # CURRENT (possibly still-legacy) Web-Access file_version, so
+                # it must run before anything rewrites file_versions below.
+                migrated_sequenced_filepaths = migrate_legacy_s3_object(
+                    archival_object, our_ark, copy_ptifs=True
+                )
+                if migrated_sequenced_filepaths:
+                    cascflow.save_digital_object_file_versions(
+                        archival_object,
+                        build_current_file_versions(
+                            archival_object, arrangement, migrated_sequenced_filepaths
+                        ),
+                    )
+                else:
+                    update_digital_object_metadata(archival_object)
                 if validation_results.get("identifier_level") == "archival_object":
                     # Invalidate the paths for the updated metadata.
                     if config("ALCHEMIST_CLOUDFRONT_DISTRIBUTION_ID", default=False):
@@ -1989,6 +2156,13 @@ def main():
                 publish_archival_object_access_files(
                     build_directory, archival_object, arrangement
                 )
+                # migrate_legacy_s3_object() reads the digital object's
+                # CURRENT (possibly still-legacy) Web-Access file_version, so
+                # it must run before create_digital_object_file_versions()
+                # rewrites file_versions to the fresh ARK-based ones below.
+                # copy_ptifs=False: the derivatives just published above
+                # already went straight to the ARK-based key.
+                migrate_legacy_s3_object(archival_object, our_ark, copy_ptifs=False)
                 create_digital_object_file_versions(
                     build_directory,
                     filepaths,

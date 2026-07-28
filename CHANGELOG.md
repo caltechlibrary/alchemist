@@ -1,5 +1,9 @@
 # Alchemist Changelog
 
+## 3.4.9
+
+- the `metadata` target now skips archival objects that have never been published via `files`/`publication` (e.g. only have a Distillery-minted ARK), logging a clear error instead of crashing with an opaque "MANIFEST NOT FOUND IN S3" error deep in `generate_iiif_manifest()`
+
 ## 3.4.8
 
 - `digital_object_id` is now derived from the archival object's ARK instead of `component_id` everywhere a digital_object is created or updated (cascflow v4.4.0); requires `external_ark_url` to already be set
