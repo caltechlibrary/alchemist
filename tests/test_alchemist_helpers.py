@@ -204,6 +204,114 @@ def test_is_archival_object_eligible_for_publication_false_with_published_file_v
     )
 
 
+def test_is_archival_object_eligible_for_metadata_update_false_with_no_digital_object(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: (
+            "https://archivesspace.example.edu"
+            if key == "ARCHIVESSPACE_STAFF_URL"
+            else kwargs.get("default")
+        ),
+    )
+    ao = {
+        "title": "Test Title",
+        "uri": "test-uri",
+        "instances": [],
+    }
+    assert alchemist.is_archival_object_eligible_for_metadata_update(ao) is False
+
+
+def test_is_archival_object_eligible_for_metadata_update_false_with_only_unpublished_file_versions(
+    monkeypatch,
+):
+    # An archival object can have a Distillery-minted ARK and a
+    # digital_object with only preservation (OCFL inventory) file_versions,
+    # never having gone through Alchemist's `files`/`publication` target --
+    # there is no manifest.json in S3 yet to update.
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: (
+            "https://archivesspace.example.edu"
+            if key == "ARCHIVESSPACE_STAFF_URL"
+            else kwargs.get("default")
+        ),
+    )
+    ao = {
+        "title": "Test Title",
+        "uri": "test-uri",
+        "instances": [
+            {
+                "digital_object": {
+                    "ref": "/repositories/2/digital_objects/1",
+                    "_resolved": {
+                        "title": "Test Title",
+                        "file_versions": [
+                            {
+                                "file_uri": "file:///preservation/path/inventory.json",
+                                "use_statement": "OCFL-Object-Inventory",
+                                "publish": False,
+                            }
+                        ],
+                    },
+                }
+            }
+        ],
+    }
+    assert alchemist.is_archival_object_eligible_for_metadata_update(ao) is False
+
+
+def test_is_archival_object_eligible_for_metadata_update_true_with_published_file_versions():
+    ao = {
+        "title": "Test Title",
+        "uri": "test-uri",
+        "instances": [
+            {
+                "digital_object": {
+                    "ref": "/repositories/2/digital_objects/1",
+                    "_resolved": {
+                        "title": "Test Title",
+                        "file_versions": [
+                            {
+                                "file_uri": "https://example.com/image.tif",
+                                "use_statement": "Web-Access",
+                                "publish": True,
+                            }
+                        ],
+                    },
+                }
+            }
+        ],
+    }
+    assert alchemist.is_archival_object_eligible_for_metadata_update(ao) is True
+
+
+def test_is_archival_object_eligible_for_metadata_update_false_with_multiple_digital_objects(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: (
+            "https://archivesspace.example.edu"
+            if key == "ARCHIVESSPACE_STAFF_URL"
+            else kwargs.get("default")
+        ),
+    )
+    ao = {
+        "title": "Test Title",
+        "uri": "test-uri",
+        "instances": [
+            {"digital_object": {"ref": "/repositories/2/digital_objects/1"}},
+            {"digital_object": {"ref": "/repositories/2/digital_objects/2"}},
+        ],
+    }
+    assert alchemist.is_archival_object_eligible_for_metadata_update(ao) is False
+
+
 def test_is_publication_file_supported_true():
     assert alchemist.is_publication_file_supported(Path("foo.tiff")) is True
 

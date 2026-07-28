@@ -1167,7 +1167,13 @@ def generate_iiif_manifest(
         )
         response = cascflow.s3_get_object(config("ALCHEMIST_BUCKET"), manifest_key)
         if response is None:
-            raise FileNotFoundError(f"❌ MANIFEST NOT FOUND IN S3: {manifest_key}")
+            raise FileNotFoundError(
+                f"❌ MANIFEST NOT FOUND IN S3: {manifest_key} -- this archival "
+                "object passed eligibility checks for a metadata-only update, "
+                "so this indicates an ARK/S3 mismatch, a manual deletion, or a "
+                "prior publication run that failed before uploading the "
+                "manifest, not simply an object that was never published"
+            )
         manifest = json.loads(response["Body"].read())
     else:
         # TODO manifest @id should be the resolver link, not a direct link to
@@ -1692,6 +1698,43 @@ def is_archival_object_eligible_for_publication(
         return True
 
 
+def is_archival_object_eligible_for_metadata_update(archival_object: dict) -> bool:
+    """A metadata-only update rewrites an existing manifest.json in S3, which
+    only exists once the archival object has been published via the `files`
+    or `publication` target. An archival object can have an external_ark_url
+    (e.g. minted by Distillery during preservation) without ever having been
+    published, in which case there is no manifest yet to update."""
+    digital_object_instances = [
+        instance
+        for instance in archival_object.get("instances", [])
+        if "digital_object" in instance.keys()
+    ]
+    if len(digital_object_instances) > 1:
+        message = "‼️ MULTIPLE DIGITAL OBJECTS FOUND: [**{}**]({}/resolve/readonly?uri={})".format(
+            archival_object["title"],
+            config("ARCHIVESSPACE_STAFF_URL"),
+            archival_object["uri"],
+        )
+        logger.error(message)
+        return False
+    if digital_object_instances:
+        file_versions = (
+            digital_object_instances[0]["digital_object"]["_resolved"].get(
+                "file_versions"
+            )
+            or []
+        )
+        if any(file_version.get("publish") for file_version in file_versions):
+            return True
+    message = "‼️ ARCHIVAL OBJECT HAS NOT BEEN PUBLISHED YET, NOTHING TO UPDATE: [**{}**]({}/resolve/readonly?uri={})".format(
+        archival_object["title"],
+        config("ARCHIVESSPACE_STAFF_URL"),
+        archival_object["uri"],
+    )
+    logger.error(message)
+    return False
+
+
 def is_publication_file_supported(entry: Path) -> bool:
     type, encoding = mimetypes.guess_type(entry.as_posix())
     ## TODO set supported types in configuration
@@ -1849,6 +1892,10 @@ def main():
             for component_id, archival_object in validation_results.get(
                 "eligible_archival_objects", {}
             ).items():
+                if not is_archival_object_eligible_for_metadata_update(
+                    archival_object
+                ):
+                    continue
                 our_ark = get_our_ark(archival_object)
                 archival_object["external_ark_url"] = (
                     f"https://{config('OUR_NMA')}/{our_ark}"
