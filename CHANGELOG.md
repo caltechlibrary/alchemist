@@ -1,5 +1,9 @@
 # Alchemist Changelog
 
+## 3.5.1
+
+- legacy `*.ptif` redirect markers now store the literal new S3 key (ending in `.ptif`) in `WebsiteRedirectLocation` instead of a bare IIIF identifier, so each marker points at a concrete target like the `index.html`/`manifest.json` markers
+
 ## 3.5.0
 
 - the `metadata` target now skips archival objects that have never been published via `files`/`publication` (e.g. only have a Distillery-minted ARK), logging a clear error instead of crashing with an opaque "MANIFEST NOT FOUND IN S3" error deep in `generate_iiif_manifest()`
