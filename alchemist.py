@@ -651,6 +651,9 @@ def update_digital_object_metadata(archival_object: dict) -> None:
                 "Persistent-URL",
             ):
                 file_version["caption"] = archival_object["title"]
+        digital_object["digital_object_id"] = (
+            cascflow.digital_object_id_for_archival_object(archival_object)
+        )
         digital_object["title"] = archival_object["title"]
         digital_object["file_versions"] = file_versions
         cascflow.update_digital_object(digital_object["uri"], digital_object)

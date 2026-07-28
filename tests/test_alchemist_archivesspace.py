@@ -92,21 +92,27 @@ def test_update_digital_object_metadata_syncs_title_and_captions(monkeypatch):
     ao = {
         "component_id": "aspace_1",
         "title": "New Title",
+        "external_ark_url": "https://n2t.net/ark:99999/b3xq7z",
         "instances": [{"digital_object": {"_resolved": digital_object}}],
     }
     alchemist.update_digital_object_metadata(ao)
     assert updated["uri"] == "/digital_objects/1"
+    assert updated["data"]["digital_object_id"] == "ark:99999/b3xq7z"
     assert updated["data"]["title"] == "New Title"
     captions = {
-        fv["use_statement"]: fv.get("caption") for fv in updated["data"]["file_versions"]
+        fv["use_statement"]: fv.get("caption")
+        for fv in updated["data"]["file_versions"]
     }
     assert captions["image-thumbnail"] == "New Title"
     assert captions["Persistent-URL"] == "New Title"
-    assert "caption" not in [
-        fv
-        for fv in updated["data"]["file_versions"]
-        if fv["use_statement"] == "Web-Access"
-    ][0]
+    assert (
+        "caption"
+        not in [
+            fv
+            for fv in updated["data"]["file_versions"]
+            if fv["use_statement"] == "Web-Access"
+        ][0]
+    )
 
 
 def test_update_digital_object_metadata_no_file_versions_is_noop(monkeypatch):
