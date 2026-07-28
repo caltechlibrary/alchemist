@@ -1,8 +1,11 @@
 # Alchemist Changelog
 
-## 3.4.9
+## 3.5.0
 
 - the `metadata` target now skips archival objects that have never been published via `files`/`publication` (e.g. only have a Distillery-minted ARK), logging a clear error instead of crashing with an opaque "MANIFEST NOT FOUND IN S3" error deep in `generate_iiif_manifest()`
+- `generate_iiif_manifest()`'s metadata-only update now locates the existing manifest via the digital_object's "Web-Access" file_version instead of assuming the ARK-based key -- objects published before the ARK migration and not yet re-touched by `files`/`publication` have their manifest.json migrated to the ARK-based key on this first metadata-only touch instead of raising "MANIFEST NOT FOUND IN S3"
+- adds `migrate_legacy_s3_object()`: both the `metadata` and `files`/`publication` targets now fully migrate an archival object still on Alchemist's pre-ARK-migration S3 layout the first time they touch it -- copying its pyramid TIFFs to the ARK-based key when no fresh derivatives are otherwise being uploaded, and writing zero-byte `WebsiteRedirectLocation` markers at the legacy `index.html`/`manifest.json`/`*.ptif` keys so old bookmarks/search-engine links keep working; pairs with cascflow v4.5.0's `URL-Redirected` relabeling of the retired file_versions
+- pin cascflow to v4.5.0
 
 ## 3.4.8
 
