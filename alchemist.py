@@ -1652,18 +1652,27 @@ def is_archival_object_eligible_for_publication(
             return False
         elif digital_object_count == 1:
             instance = digital_object_instances[0]
-            if (
-                instance["digital_object"]["_resolved"].get("file_versions")
-                and pipeline == "publication"
-            ):
-                message = "‼️ DIGITAL OBJECT ALREADY HAS FILE VERSIONS: [**{}**]({}/resolve/readonly?uri={})".format(
+            # Only published file_versions count as "already has web access
+            # files" -- Distillery attaches its own file_versions (OCFL
+            # inventory copies) to the same digital_object, but always
+            # unpublished (publish: False), so they must not trip this check.
+            file_versions = (
+                instance["digital_object"]["_resolved"].get("file_versions") or []
+            )
+            published_file_versions = [
+                file_version
+                for file_version in file_versions
+                if file_version.get("publish")
+            ]
+            if published_file_versions and pipeline == "publication":
+                message = "‼️ DIGITAL OBJECT ALREADY HAS PUBLISHED FILE VERSIONS: [**{}**]({}/resolve/readonly?uri={})".format(
                     instance["digital_object"]["_resolved"]["title"],
                     config("ARCHIVESSPACE_STAFF_URL"),
                     instance["digital_object"]["ref"],
                 )
                 logger.error(message)
                 return False
-            elif instance["digital_object"]["_resolved"].get("file_versions"):
+            elif published_file_versions:
                 message = "⚠️ EXISTING WEB ACCESS FILES WILL BE REPLACED AND DIGITAL OBJECT RECORDS WILL BE UPDATED: [**{}**]({}/resolve/readonly?uri={})".format(
                     instance["digital_object"]["_resolved"]["title"],
                     config("ARCHIVESSPACE_STAFF_URL"),
@@ -1672,7 +1681,8 @@ def is_archival_object_eligible_for_publication(
                 logger.warning(message)
                 return True
             else:
-                ## no file versions exist yet
+                ## no published file versions exist yet (may still have
+                ## preservation-only file_versions attached by Distillery)
                 return True
         else:
             ## go through with creating a new digital_object
