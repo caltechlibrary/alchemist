@@ -1097,10 +1097,10 @@ def test_migrate_legacy_s3_object_copies_ptifs_and_writes_markers(monkeypatch):
         "website_redirect_location": "https://digital.example.edu/ark:99999/abc123x/manifest.json"
     }
     assert put_by_key["collections/collection_1/aspace_1/0001.ptif"] == {
-        "website_redirect_location": "/ark:99999/abc123x/0001"
+        "website_redirect_location": "/ark:99999/abc123x/0001.ptif"
     }
     assert put_by_key["collections/collection_1/aspace_1/0002.ptif"] == {
-        "website_redirect_location": "/ark:99999/abc123x/0002"
+        "website_redirect_location": "/ark:99999/abc123x/0002.ptif"
     }
 
 
@@ -1156,7 +1156,7 @@ def test_migrate_legacy_s3_object_renames_to_canonical_indicator_filenames(
     ]
     put_by_key = dict(put_calls)
     assert put_by_key["collections/collection_1/aspace_1/aspace_1_1.ptif"] == {
-        "website_redirect_location": "/ark:99999/abc123x/0001"
+        "website_redirect_location": "/ark:99999/abc123x/0001.ptif"
     }
 
 

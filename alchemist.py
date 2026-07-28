@@ -1172,13 +1172,15 @@ def migrate_legacy_s3_object(
     )
     for indicator, legacy_path in sequenced_filepaths.items():
         if legacy_path.suffix == ".ptif":
-            # S3's PutObject requires WebsiteRedirectLocation to start with
-            # "http://", "https://", or "/" -- a bare identifier isn't
-            # accepted, so store it as a bucket-relative path.
+            # The value is the literal new S3 key (leading "/" required by
+            # S3's PutObject, which rejects a bare identifier), ending in
+            # .ptif rather than the bare IIIF identifier, so each marker
+            # points at a concrete object, as the index.html and
+            # manifest.json markers do.
             cascflow.s3_put_object(
                 bucket,
                 f"{legacy_prefix}/{legacy_path.name}",
-                website_redirect_location=f"/{our_ark}/{indicator}",
+                website_redirect_location=f"/{our_ark}/{indicator}.ptif",
             )
 
     logger.info(
