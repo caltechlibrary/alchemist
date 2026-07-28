@@ -1,5 +1,10 @@
 # Alchemist Changelog
 
+## 3.4.8
+
+- `digital_object_id` is now derived from the archival object's ARK instead of `component_id` everywhere a digital_object is created or updated (cascflow v4.4.0); requires `external_ark_url` to already be set
+- `is_archival_object_eligible_for_publication()` now only treats *published* `file_versions` as "already published for web access" -- Distillery's own unpublished OCFL inventory file_versions on the same digital_object no longer trip a false "DIGITAL OBJECT ALREADY HAS FILE VERSIONS" error
+
 ## 3.4.7
 
 - use cascflow's shared `invalidate_cloudfront_paths()` instead of a local copy; pin cascflow to v4.3.2
