@@ -1,5 +1,9 @@
 # Alchemist Changelog
 
+## 3.5.2
+
+- `migrate_legacy_s3_object()` now derives the legacy representative `*.ptif` filename authoritatively from the digital_object's existing `image-thumbnail` file_version URL (`get_legacy_thumbnail_identifier()`), instead of guessing from an S3 listing -- legacy naming conventions vary by collection (some collections name their PTIFs after the component_id itself, like `EX-7.ptif`, with no sequence suffix at all), so a single-file legacy object could be migrated under the wrong filename
+
 ## 3.5.1
 
 - legacy `*.ptif` redirect markers now store the literal new S3 key (ending in `.ptif`) in `WebsiteRedirectLocation` instead of a bare IIIF identifier, so each marker points at a concrete target like the `index.html`/`manifest.json` markers
