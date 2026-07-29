@@ -943,24 +943,21 @@ def test_build_current_file_versions_returns_three_ark_based_entries(monkeypatch
     )
 
 
-def _migration_archival_object(web_access_url):
+def _migration_archival_object(web_access_url, thumbnail_identifier=None):
+    file_versions = [{"file_uri": web_access_url, "use_statement": "Web-Access"}]
+    if thumbnail_identifier:
+        file_versions.append(
+            {
+                "file_uri": f"https://iiif.example.edu/{thumbnail_identifier}/full/200,/0/default.webp",
+                "use_statement": "image-thumbnail",
+            }
+        )
     return {
         "component_id": "aspace_1",
         "title": "Test Title",
         "external_ark_url": "https://resolver.example.edu/ark:99999/abc123x",
         "instances": [
-            {
-                "digital_object": {
-                    "_resolved": {
-                        "file_versions": [
-                            {
-                                "file_uri": web_access_url,
-                                "use_statement": "Web-Access",
-                            }
-                        ]
-                    }
-                }
-            }
+            {"digital_object": {"_resolved": {"file_versions": file_versions}}}
         ],
     }
 
@@ -1032,13 +1029,15 @@ def test_migrate_legacy_s3_object_returns_none_without_legacy_derivatives(
 
 def test_migrate_legacy_s3_object_copies_ptifs_and_writes_markers(monkeypatch):
     archival_object = _migration_archival_object(
-        "https://digital.example.edu/collections/collection_1/aspace_1"
+        "https://digital.example.edu/collections/collection_1/aspace_1",
+        thumbnail_identifier="collections/collection_1/aspace_1/0001",
     )
     monkeypatch.setattr(
         alchemist,
         "config",
         lambda key, **kwargs: {
             "ALCHEMIST_BASE_URL": "https://digital.example.edu",
+            "ALCHEMIST_IIIF_ENDPOINT": "https://iiif.example.edu",
             "ALCHEMIST_BUCKET": "test-bucket",
             "OUR_NMA": "resolver.example.edu",
         }.get(key, kwargs.get("default")),
@@ -1113,13 +1112,15 @@ def test_migrate_legacy_s3_object_renames_to_canonical_indicator_filenames(
     # IIIF identifier from the indicator alone, so the copy must rename to
     # match, and the redirect marker's value must carry the indicator too.
     archival_object = _migration_archival_object(
-        "https://digital.example.edu/collections/collection_1/aspace_1"
+        "https://digital.example.edu/collections/collection_1/aspace_1",
+        thumbnail_identifier="collections/collection_1/aspace_1/aspace_1_1",
     )
     monkeypatch.setattr(
         alchemist,
         "config",
         lambda key, **kwargs: {
             "ALCHEMIST_BASE_URL": "https://digital.example.edu",
+            "ALCHEMIST_IIIF_ENDPOINT": "https://iiif.example.edu",
             "ALCHEMIST_BUCKET": "test-bucket",
             "OUR_NMA": "resolver.example.edu",
         }.get(key, kwargs.get("default")),
@@ -1129,6 +1130,7 @@ def test_migrate_legacy_s3_object_renames_to_canonical_indicator_filenames(
         "s3_list_object_keys",
         lambda bucket, prefix: [
             "collections/collection_1/aspace_1/aspace_1_1.ptif",
+            "collections/collection_1/aspace_1/aspace_1_2.ptif",
         ],
     )
     copy_calls = []
@@ -1148,16 +1150,212 @@ def test_migrate_legacy_s3_object_renames_to_canonical_indicator_filenames(
         archival_object, "ark:99999/abc123x", copy_ptifs=True
     )
 
-    assert copy_calls == [
+    assert set(copy_calls) == {
         (
             "collections/collection_1/aspace_1/aspace_1_1.ptif",
             "ark:99999/abc123x/0001.ptif",
-        )
-    ]
+        ),
+        (
+            "collections/collection_1/aspace_1/aspace_1_2.ptif",
+            "ark:99999/abc123x/0002.ptif",
+        ),
+    }
     put_by_key = dict(put_calls)
     assert put_by_key["collections/collection_1/aspace_1/aspace_1_1.ptif"] == {
         "website_redirect_location": "/ark:99999/abc123x/0001.ptif"
     }
+    assert put_by_key["collections/collection_1/aspace_1/aspace_1_2.ptif"] == {
+        "website_redirect_location": "/ark:99999/abc123x/0002.ptif"
+    }
+
+
+def test_migrate_legacy_s3_object_uses_thumbnail_url_for_component_id_named_file(
+    monkeypatch,
+):
+    # Some collections name their legacy ptifs after the component_id
+    # itself (e.g. EX-7.ptif), with no sequence suffix at all, so
+    # get_sequence_indicator() would derive a nonsense indicator ("ex-7")
+    # from the filename -- the representative filename must instead be
+    # read authoritatively off the image-thumbnail file_version's URL, and
+    # always keyed "0001" once identified.
+    archival_object = _migration_archival_object(
+        "https://digital.example.edu/collections/collection_2/EX-7",
+        thumbnail_identifier="collections/collection_2/EX-7/EX-7",
+    )
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "ALCHEMIST_BASE_URL": "https://digital.example.edu",
+            "ALCHEMIST_IIIF_ENDPOINT": "https://iiif.example.edu",
+            "ALCHEMIST_BUCKET": "test-bucket",
+            "OUR_NMA": "resolver.example.edu",
+        }.get(key, kwargs.get("default")),
+    )
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: ["collections/collection_2/EX-7/EX-7.ptif"],
+    )
+    copy_calls = []
+    put_calls = []
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_copy_object",
+        lambda bucket, source_key, dest_key: copy_calls.append((source_key, dest_key)),
+    )
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_put_object",
+        lambda bucket, key, **kwargs: put_calls.append((key, kwargs)),
+    )
+
+    result = alchemist.migrate_legacy_s3_object(
+        archival_object, "ark:99999/b7k3m2x", copy_ptifs=True
+    )
+
+    assert result == {"0001": Path("EX-7.ptif")}
+    assert copy_calls == [
+        ("collections/collection_2/EX-7/EX-7.ptif", "ark:99999/b7k3m2x/0001.ptif")
+    ]
+    put_by_key = dict(put_calls)
+    assert put_by_key["collections/collection_2/EX-7/EX-7.ptif"] == {
+        "website_redirect_location": "/ark:99999/b7k3m2x/0001.ptif"
+    }
+
+
+def test_migrate_legacy_s3_object_falls_back_to_0001_for_single_file_without_thumbnail(
+    monkeypatch,
+):
+    # No image-thumbnail file_version to confirm against, but there's only
+    # one legacy derivative anyway -- the same "0001" convention applies
+    # regardless of what it happens to be named.
+    archival_object = _migration_archival_object(
+        "https://digital.example.edu/collections/collection_2/EX-7"
+    )
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "ALCHEMIST_BASE_URL": "https://digital.example.edu",
+            "ALCHEMIST_BUCKET": "test-bucket",
+            "OUR_NMA": "resolver.example.edu",
+        }.get(key, kwargs.get("default")),
+    )
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: ["collections/collection_2/EX-7/EX-7.ptif"],
+    )
+    copy_calls = []
+    put_calls = []
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_copy_object",
+        lambda bucket, source_key, dest_key: copy_calls.append((source_key, dest_key)),
+    )
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_put_object",
+        lambda bucket, key, **kwargs: put_calls.append((key, kwargs)),
+    )
+
+    result = alchemist.migrate_legacy_s3_object(
+        archival_object, "ark:99999/b7k3m2x", copy_ptifs=True
+    )
+
+    assert result == {"0001": Path("EX-7.ptif")}
+    assert copy_calls == [
+        ("collections/collection_2/EX-7/EX-7.ptif", "ark:99999/b7k3m2x/0001.ptif")
+    ]
+    put_by_key = dict(put_calls)
+    assert put_by_key["collections/collection_2/EX-7/EX-7.ptif"] == {
+        "website_redirect_location": "/ark:99999/b7k3m2x/0001.ptif"
+    }
+
+
+def test_get_legacy_thumbnail_identifier_returns_none_without_digital_object():
+    assert alchemist.get_legacy_thumbnail_identifier({"instances": []}) is None
+
+
+def test_get_legacy_thumbnail_identifier_returns_none_without_thumbnail_file_version():
+    archival_object = _migration_archival_object(
+        "https://digital.example.edu/collections/collection_2/EX-7"
+    )
+    assert alchemist.get_legacy_thumbnail_identifier(archival_object) is None
+
+
+def test_get_legacy_thumbnail_identifier_returns_none_when_url_is_not_iiif_endpoint_relative(
+    monkeypatch,
+):
+    archival_object = _migration_archival_object(
+        "https://digital.example.edu/collections/collection_2/EX-7",
+        thumbnail_identifier="collections/collection_2/EX-7/EX-7",
+    )
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "ALCHEMIST_IIIF_ENDPOINT": "https://some-other-iiif-host.example.edu",
+        }.get(key, kwargs.get("default")),
+    )
+
+    assert alchemist.get_legacy_thumbnail_identifier(archival_object) is None
+
+
+def test_get_legacy_thumbnail_identifier_returns_the_identifier(monkeypatch):
+    archival_object = _migration_archival_object(
+        "https://digital.example.edu/collections/collection_2/EX-7",
+        thumbnail_identifier="collections/collection_2/EX-7/EX-7",
+    )
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "ALCHEMIST_IIIF_ENDPOINT": "https://iiif.example.edu",
+        }.get(key, kwargs.get("default")),
+    )
+
+    assert (
+        alchemist.get_legacy_thumbnail_identifier(archival_object)
+        == "collections/collection_2/EX-7/EX-7"
+    )
+
+
+def test_migrate_legacy_s3_object_returns_none_when_thumbnail_filename_missing_among_multiple_ptifs(
+    monkeypatch,
+):
+    # The image-thumbnail-derived filename doesn't match anything actually
+    # on S3, and there's more than one file present -- too ambiguous to
+    # guess which one is representative, so bail out rather than silently
+    # picking one.
+    archival_object = _migration_archival_object(
+        "https://digital.example.edu/collections/collection_1/aspace_1",
+        thumbnail_identifier="collections/collection_1/aspace_1/0099",
+    )
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "ALCHEMIST_BASE_URL": "https://digital.example.edu",
+            "ALCHEMIST_IIIF_ENDPOINT": "https://iiif.example.edu",
+            "ALCHEMIST_BUCKET": "test-bucket",
+        }.get(key, kwargs.get("default")),
+    )
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "collections/collection_1/aspace_1/0001.ptif",
+            "collections/collection_1/aspace_1/0002.ptif",
+        ],
+    )
+
+    result = alchemist.migrate_legacy_s3_object(
+        archival_object, "ark:99999/abc123x", copy_ptifs=True
+    )
+
+    assert result is None
 
 
 def test_migrate_legacy_s3_object_skips_copy_when_copy_ptifs_false(monkeypatch):

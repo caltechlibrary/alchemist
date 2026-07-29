@@ -1095,6 +1095,43 @@ def get_published_web_access_url(archival_object: dict) -> str | None:
     return None
 
 
+def get_legacy_thumbnail_identifier(archival_object: dict) -> str | None:
+    """Return the exact legacy IIIF identifier (relative path, no leading
+    slash, no trailing .ptif) for archival_object's representative/first
+    page, read authoritatively off its digital_object's "image-thumbnail"
+    file_version URL -- the identifier is that URL's path with
+    ALCHEMIST_IIIF_ENDPOINT and the trailing IIIF Image API segments
+    stripped off. Legacy filenames don't necessarily carry a sequence
+    suffix at all (some collections name them after the component_id
+    itself, with no "_0001"-style suffix), so this can't be
+    guessed from whatever happens to be on S3."""
+    digital_object_instances = [
+        instance
+        for instance in archival_object.get("instances", [])
+        if "digital_object" in instance.keys()
+    ]
+    if not digital_object_instances:
+        return None
+    file_versions = (
+        digital_object_instances[0]["digital_object"]["_resolved"].get("file_versions")
+        or []
+    )
+    thumbnail_url = None
+    for file_version in file_versions:
+        if file_version.get("use_statement") == "image-thumbnail":
+            thumbnail_url = file_version.get("file_uri")
+            break
+    if not thumbnail_url:
+        return None
+    iiif_prefix = config("ALCHEMIST_IIIF_ENDPOINT").rstrip("/") + "/"
+    if not thumbnail_url.startswith(iiif_prefix):
+        return None
+    parts = thumbnail_url[len(iiif_prefix) :].split("/")
+    if len(parts) <= 4:
+        return None
+    return "/".join(parts[:-4])
+
+
 def migrate_legacy_s3_object(
     archival_object: dict, our_ark: str, copy_ptifs: bool
 ) -> dict[str, Path] | None:
@@ -1128,18 +1165,55 @@ def migrate_legacy_s3_object(
     bucket = config("ALCHEMIST_BUCKET")
 
     legacy_keys = cascflow.s3_list_object_keys(bucket, f"{legacy_prefix}/")
-    legacy_derivative_filenames = [
-        key.rsplit("/", 1)[-1] for key in legacy_keys if key.endswith((".ptif", ".mp4"))
+    legacy_ptif_filenames = [
+        key.rsplit("/", 1)[-1] for key in legacy_keys if key.endswith(".ptif")
     ]
-    if not legacy_derivative_filenames:
+    legacy_mp4_filenames = [
+        key.rsplit("/", 1)[-1] for key in legacy_keys if key.endswith(".mp4")
+    ]
+    if not legacy_ptif_filenames and not legacy_mp4_filenames:
         logger.error(
             f"❌ NO *.ptif/*.mp4 FOUND UNDER LEGACY PREFIX, CANNOT MIGRATE: {legacy_prefix}"
         )
         return None
-    sequenced_filepaths = {
-        get_sequence_indicator(Path(filename)): Path(filename)
-        for filename in sorted(legacy_derivative_filenames, key=lambda f: get_sequence_indicator(Path(f)))
-    }
+
+    sequenced_filepaths = {}
+    if legacy_ptif_filenames:
+        # The representative/first page's legacy filename is read
+        # authoritatively off the image-thumbnail file_version's URL, not
+        # guessed via get_sequence_indicator() -- legacy filenames don't
+        # necessarily carry a sequence suffix at all (some collections
+        # name them after the component_id itself). It's
+        # always "0001", matching main()'s own single-file override (`if
+        # Path(stage_2_path_obj).is_file(): sequenced_filepaths = {"0001":
+        # filepaths[0]}`) and get_thumbnail_url()'s assumption that the
+        # first sequenced_filepaths entry is the thumbnail.
+        representative_identifier = get_legacy_thumbnail_identifier(archival_object)
+        representative_filename = (
+            f"{representative_identifier.rsplit('/', 1)[-1]}.ptif"
+            if representative_identifier
+            else None
+        )
+        if representative_filename not in legacy_ptif_filenames:
+            if len(legacy_ptif_filenames) == 1:
+                representative_filename = legacy_ptif_filenames[0]
+            else:
+                logger.error(
+                    "❌ IMAGE-THUMBNAIL-DERIVED FILENAME NOT FOUND AMONG "
+                    f"MULTIPLE LEGACY PTIFS, CANNOT MIGRATE: {legacy_prefix}"
+                )
+                return None
+        sequenced_filepaths["0001"] = Path(representative_filename)
+        # Any remaining pages of a genuine multi-page object do follow a
+        # sequence-suffixed naming convention, so get_sequence_indicator()
+        # is reasonable for them.
+        for filename in sorted(legacy_ptif_filenames):
+            if filename != representative_filename:
+                sequenced_filepaths[get_sequence_indicator(Path(filename))] = Path(
+                    filename
+                )
+    for filename in legacy_mp4_filenames:
+        sequenced_filepaths.setdefault(get_sequence_indicator(Path(filename)), Path(filename))
 
     # The new key's filename must be {indicator}{suffix}, matching how
     # get_thumbnail_url()/build_current_file_versions() construct the
