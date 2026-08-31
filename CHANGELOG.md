@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `docs/decisions/`: architecturally significant decisions are now recorded as [ADRs](https://adr.github.io/madr/); see [ADR 0001](docs/decisions/0001-record-architecture-decisions.md) for the conventions
+
 ## [3.5.3]
 
 ### Fixed
