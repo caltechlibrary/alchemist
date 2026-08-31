@@ -400,14 +400,17 @@ def create_canvas_metadata(
             config("MAGICK_CMD"),
             "identify",
             "-format",
-            "%w*%h",
+            # NOTE the trailing newline separates the output of multi-frame
+            # images (multi-page TIFFs, embedded thumbnails, etc.)
+            "%w*%h\\n",
             filepath.as_posix(),
         ],
         capture_output=True,
         check=True,
         text=True,
     )
-    dimensions = magick_identify.stdout.strip().split("*")
+    # NOTE the first frame is the one vips reads when creating the pyramid TIFF
+    dimensions = magick_identify.stdout.strip().splitlines()[0].split("*")
     canvas_id = "/".join(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
@@ -1506,15 +1509,18 @@ def create_pyramid_tiff(
                 config("MAGICK_CMD"),
                 "identify",
                 "-format",
-                "%m*%w*%h",
+                # NOTE the trailing newline separates the output of multi-frame
+                # images (multi-page TIFFs, embedded thumbnails, etc.)
+                "%m*%w*%h\\n",
                 filepath.as_posix(),
             ],
             capture_output=True,
             check=True,
             text=True,
         )
-        image_format, image_width, image_height = magick_identify.stdout.strip().split(
-            "*"
+        # NOTE the first frame is the one vips reads when creating the pyramid TIFF
+        image_format, image_width, image_height = (
+            magick_identify.stdout.strip().splitlines()[0].split("*")
         )
         image_width, image_height = int(image_width), int(image_height)
 
@@ -1673,7 +1679,7 @@ def loop_over_archival_object_files(
     with ProcessPoolExecutor(
         initializer=_worker_init, initargs=(str(settings_path),)
     ) as executor:
-        [
+        futures = {
             executor.submit(
                 conditional_derivative_file_processing,
                 build_directory,
@@ -1681,10 +1687,25 @@ def loop_over_archival_object_files(
                 archival_object,
                 arrangement,
                 sequence_indicator,
-            )
+            ): filepath
             # for filepath in filepaths
             for sequence_indicator, filepath in sequenced_filepaths.items()
-        ]
+        }
+    # NOTE without checking the results, a failure in a worker process is
+    # silently discarded and the object is published with missing derivatives
+    failed_filepaths = []
+    for future, filepath in futures.items():
+        try:
+            future.result()
+        except Exception:
+            logger.exception(f"❌ DERIVATIVE FILE PROCESSING FAILED: {filepath}")
+            failed_filepaths.append(filepath)
+    if failed_filepaths:
+        raise RuntimeError(
+            "❌ DERIVATIVE FILE PROCESSING FAILED: {}".format(
+                ", ".join([f.name for f in failed_filepaths])
+            )
+        )
 
 
 def archival_object_level_processing(

@@ -535,6 +535,47 @@ def test_create_pyramid_tiff_writes_metadata_sidecar(monkeypatch, tmp_path):
     }
 
 
+def test_create_pyramid_tiff_uses_first_frame_of_multiframe_image(
+    monkeypatch, tmp_path
+):
+    """Multi-page TIFFs make `magick identify` report one line per frame."""
+    build_directory = SimpleNamespace(name=str(tmp_path))
+    filepath = tmp_path / "source.tiff"
+    filepath.write_bytes(b"")
+    archival_object = {"component_id": "aspace_1"}
+    arrangement = {"collection_id": "collection_1"}
+    Path(tmp_path, "collection_1", "aspace_1").mkdir(parents=True)
+
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "MAGICK_CMD": "magick",
+            "VIPS_CMD": "vips",
+        }.get(key, kwargs.get("default")),
+    )
+
+    def fake_run(cmd, **kwargs):
+        if "identify" in cmd:
+            # vips reads the first frame, so its dimensions are the ones we want
+            return SimpleNamespace(stdout="TIFF*4096*4096\nTIFF*200*150\n")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(alchemist.subprocess, "run", fake_run)
+
+    alchemist.create_pyramid_tiff(
+        build_directory, filepath, archival_object, arrangement, "1"
+    )
+
+    metadata_file = Path(tmp_path, "collection_1", "aspace_1", "1.ptif.metadata.json")
+    assert json.loads(metadata_file.read_text()) == {
+        "width": 4096,
+        "height": 4096,
+        "pages": 5,
+        "tilesize": 256,
+    }
+
+
 def test_generate_archival_object_page_builds_ark_manifest_url(monkeypatch, tmp_path):
     arrangement = {
         "collection_id": "collection_1",
