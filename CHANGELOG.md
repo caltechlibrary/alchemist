@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.3]
+
+### Fixed
+
+- `create_pyramid_tiff()` and `create_canvas_metadata()` no longer mis-parse `magick identify` output for multi-frame images -- `-format` is emitted once per frame with no separator, so a TIFF carrying an embedded reduced-resolution preview (as Capture One writes on export from the iXG copy stand) yielded `TIFF*12381*9926TIFF*160*128`, which crashed `create_pyramid_tiff()` with "too many values to unpack (expected 3)" and silently gave `create_canvas_metadata()` a corrupt canvas height like `9926TIFF`; both now parse only the first frame, which is the one vips reads when building the pyramid
+- `loop_over_archival_object_files()` now calls `.result()` on its futures and raises naming the files that failed -- worker exceptions were previously discarded, so a failed derivative still logged "DERIVATIVE FILE PROCESSING COMPLETE" and the object went on to be published with missing derivatives before dying with an opaque `IndexError` in `create_digital_object_file_versions()`
+
 ## [3.5.2]
 
 ### Fixed
