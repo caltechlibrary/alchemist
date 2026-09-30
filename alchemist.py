@@ -103,7 +103,7 @@ ALCHEMIST_SETTINGS_SPEC = [
     {"key": "FFPROBE_CMD", "kind": "executable"},
     {"key": "FFMPEG_CMD", "kind": "executable"},
     {"key": "S5CMD_CMD", "kind": "executable"},
-    {"key": "ABSOLUTE_MOUNT_PARENT", "kind": "directory"},
+    {"key": "SOURCE_MOUNT_PARENT", "kind": "directory"},
     {"key": "RELATIVE_SOURCE_DIRECTORY", "kind": "string"},
     {"key": "RELATIVE_BATCH_DIRECTORY", "kind": "string"},
     {"key": "FILES_TO_REMOVE", "kind": "csv", "required": False},
