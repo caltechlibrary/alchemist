@@ -24,7 +24,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "arkminter", git = "https://github.com/caltechlibrary/arkminter?tag=v0.2.1" },
+    { name = "arkminter", git = "https://github.com/caltechlibrary/arkminter?tag=v1.0.0" },
     { name = "boto3" },
     { name = "cascflow", git = "https://github.com/caltechlibrary/cascflow?tag=v5.0.0" },
     { name = "jinja2" },
@@ -41,8 +41,8 @@ dev = [
 
 [[package]]
 name = "arkminter"
-version = "0.2.1"
-source = { git = "https://github.com/caltechlibrary/arkminter?tag=v0.2.1#6d3c672b78b9bd64b1612ba9863dfc1d029ba5c6" }
+version = "1.0.0"
+source = { git = "https://github.com/caltechlibrary/arkminter?tag=v1.0.0#5ecd595f19e6e08c1a3eba9fe4442944801018f6" }
 dependencies = [
     { name = "boto3" },
 ]

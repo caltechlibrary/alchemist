@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - rename the `ABSOLUTE_MOUNT_PARENT` setting to `SOURCE_MOUNT_PARENT` (cascflow v5.0.0), which names the mount it refers to; every `settings.ini` needs the new key
 - pin cascflow to v5.0.0, up from v4.5.0 -- adds the `OCFL-Object-Root` entry to `FILE_VERSION_USE_STATEMENT_ORDER`, so Distillery's preservation `file_version` sorts after the web-access entries rather than below the legacy `URL-Redirected` ones
+- pin arkminter to v1.0.0, which declares stable the API Alchemist has been minting production ARKs with; no functional change from v0.2.1
 
 ### Security
 
