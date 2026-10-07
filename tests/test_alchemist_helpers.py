@@ -1470,3 +1470,90 @@ def test_alchemist_settings_spec_marks_our_shoulder_optional():
         item for item in alchemist.ALCHEMIST_SETTINGS_SPEC if item["key"] == "OUR_SHOULDER"
     )
     assert spec_entry.get("required") is False
+
+
+def make_published_archival_object():
+    return {
+        "title": "Test Title",
+        "uri": "test-uri",
+        "instances": [
+            {
+                "digital_object": {
+                    "ref": "/repositories/2/digital_objects/1",
+                    "_resolved": {
+                        "title": "Test Title",
+                        "file_versions": [
+                            {
+                                "file_uri": "https://example.com/image.tif",
+                                "use_statement": "Web-Access",
+                                "publish": True,
+                            }
+                        ],
+                    },
+                }
+            }
+        ],
+    }
+
+
+def test_validate_metadata_for_update_raises_for_identifier_not_found():
+    validation_results = {
+        "identifier_level": "archival_object",
+        "eligible_archival_objects": {},
+        "ineligible_archival_objects": [
+            {
+                "component_id": "EX-1.1, EX-2",
+                "detail": "❌ ARCHIVAL OBJECT NOT FOUND: EX-1.1, EX-2",
+            }
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="ARCHIVAL OBJECTS NOT FOUND"):
+        alchemist.validate_metadata_for_update(validation_results)
+
+
+def test_validate_metadata_for_update_raises_for_no_archival_objects():
+    validation_results = {
+        "identifier_level": "archival_object",
+        "eligible_archival_objects": {},
+        "ineligible_archival_objects": [],
+    }
+
+    with pytest.raises(RuntimeError, match="NO ARCHIVAL OBJECTS FOUND"):
+        alchemist.validate_metadata_for_update(validation_results)
+
+
+def test_validate_metadata_for_update_raises_for_unpublished_archival_object(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: (
+            "https://archivesspace.example.edu"
+            if key == "ARCHIVESSPACE_STAFF_URL"
+            else kwargs.get("default")
+        ),
+    )
+    validation_results = {
+        "identifier_level": "archival_object",
+        "eligible_archival_objects": {
+            "EX-2": {"title": "Test Title", "uri": "test-uri", "instances": []}
+        },
+        "ineligible_archival_objects": [],
+    }
+
+    with pytest.raises(
+        RuntimeError, match="ARCHIVAL OBJECTS NOT ELIGIBLE FOR METADATA UPDATE"
+    ):
+        alchemist.validate_metadata_for_update(validation_results)
+
+
+def test_validate_metadata_for_update_happy_path_no_exception():
+    validation_results = {
+        "identifier_level": "archival_object",
+        "eligible_archival_objects": {"EX-2": make_published_archival_object()},
+        "ineligible_archival_objects": [],
+    }
+
+    alchemist.validate_metadata_for_update(validation_results)

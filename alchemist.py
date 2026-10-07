@@ -2101,6 +2101,37 @@ def validate_digital_files_for_publication(
         raise RuntimeError(message)
 
 
+def validate_metadata_for_update(validation_results: dict) -> None:
+    eligible_archival_objects = validation_results.get("eligible_archival_objects", {})
+    ineligible_archival_objects = validation_results.get(
+        "ineligible_archival_objects", []
+    )
+    if ineligible_archival_objects:
+        message = "❌ ARCHIVAL OBJECTS NOT FOUND"
+        logger.error(message)
+        for ineligible_archival_object in ineligible_archival_objects:
+            logger.error(ineligible_archival_object["detail"])
+        raise RuntimeError(message)
+    if not eligible_archival_objects:
+        message = "❌ NO ARCHIVAL OBJECTS FOUND"
+        logger.error(message)
+        raise RuntimeError(message)
+    # is_archival_object_eligible_for_metadata_update() logs its own reasons
+    unpublished_archival_objects = [
+        component_id
+        for component_id, archival_object in eligible_archival_objects.items()
+        if not is_archival_object_eligible_for_metadata_update(archival_object)
+    ]
+    if unpublished_archival_objects:
+        message = "❌ ARCHIVAL OBJECTS NOT ELIGIBLE FOR METADATA UPDATE"
+        logger.error(message)
+        for component_id in unpublished_archival_objects:
+            logger.error(f"❌ {component_id}")
+        raise RuntimeError(message)
+    for component_id in eligible_archival_objects:
+        logger.info(f"🉑 {component_id}")
+
+
 def main():
     global args, settings_path, config, logger
     args = parser.parse_args()
@@ -2129,7 +2160,8 @@ def main():
         validate_settings_for_publication(settings_validation_results)
         if args.target == "metadata":
             logger.info(args.context)
-            cascflow.validate_metadata_identifier(args.context)
+            validation_results = cascflow.validate_metadata_identifier(args.context)
+            validate_metadata_for_update(validation_results)
         else:
             validation_results = cascflow.validate_digital_files(args.context)
             validate_digital_files_for_publication(validation_results, args.target)
