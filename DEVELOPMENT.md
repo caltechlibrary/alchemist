@@ -9,6 +9,7 @@
   - [Updating Dependencies](#updating-dependencies)
   - [Dependency Structure](#dependency-structure)
   - [Managing Local vs. Published Dependencies](#managing-local-vs-published-dependencies)
+  - [Front-End Packages](#front-end-packages)
 - [Release & Versioning](#release--versioning)
 - [Local Development Workflows](#local-development-workflows)
 - [Continuous Integration](#continuous-integration)
@@ -229,6 +230,35 @@ uv run pytest tests/ -v
 # Then:
 uv sync --all-groups
 ```
+
+### Front-End Packages
+
+The generated pages load Universal Viewer and Pico CSS from the Alchemist
+bucket, not a CDN, at `{ALCHEMIST_BASE_URL}/assets/{name}/{version}/`. The
+pinned versions, npm integrity hashes and published paths are
+`FRONTEND_PACKAGES` in `alchemist.py`.
+
+Every published page keeps the asset URLs it was rendered with, so a
+published version must stay in the bucket unchanged. To upgrade a package:
+
+1. Update its `version` and `integrity` in `FRONTEND_PACKAGES` (`npm view
+   <package>@<version> dist.integrity` prints the hash), and check that its
+   `paths` still exist in the new tarball.
+2. Publish the assets before publishing any page that references them:
+
+   ```bash
+   uv run scripts/publish_frontend_assets.py --dry-run
+   uv run scripts/publish_frontend_assets.py
+   ```
+
+   The script verifies each tarball against its pinned hash, uploads only
+   keys not already in the bucket, and uses your normal AWS credentials
+   rather than `settings.ini`'s. Once every file is uploaded it writes an
+   `assets/{name}/{version}/.published.json` marker; `alchemist.py validate`
+   fails for every target until each pinned package has one with a matching
+   hash.
+3. Republish pages (a `metadata` run regenerates them) for them to pick up
+   the new version; pages not republished keep loading the old one.
 
 ## Release & Versioning
 

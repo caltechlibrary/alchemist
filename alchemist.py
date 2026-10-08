@@ -34,6 +34,53 @@ PYRAMID_TILE_SIZE = 256
 # in S3; these are network-bound metadata-only copies, not data transfer
 PYRAMID_TIFF_METADATA_MAX_WORKERS = 20
 
+# npm packages the generated pages load, self-hosted under
+# {ALCHEMIST_BASE_URL}/assets/{name}/{version}/ by
+# scripts/publish_frontend_assets.py. Published pages reference these
+# versioned URLs permanently, so a published version is never overwritten
+# or deleted; upgrading a package means publishing the new version alongside
+# the old one. `paths` are what gets published, relative to the package root;
+# `integrity` is the npm registry's Subresource Integrity hash of the tarball.
+FRONTEND_PACKAGES = {
+    "universalviewer": {
+        "npm_name": "universalviewer",
+        "version": "4.4.4",
+        "integrity": "sha512-fdI3Fy6AYOhwZyfWuuVj6gYHEwJlOrZBtUauR6uPrQhO/80MkksENJB3jM2E9wTu9qz7BOwg21iTmSOVv+luWw==",
+        # UV.js loads its numbered chunks relative to its own URL, so the
+        # whole umd/ directory is needed, not only UV.js
+        "paths": ["dist/umd", "dist/uv.css", "LICENSE.txt"],
+    },
+    "pico": {
+        "npm_name": "@picocss/pico",
+        "version": "2.1.1",
+        "integrity": "sha512-kIDugA7Ps4U+2BHxiNHmvgPIQDWPDU4IeU6TNRdvXQM1uZX+FibqDQT2xUOnnO2yq/LUHcwnGlu1hvf4KfXnMg==",
+        "paths": ["css/pico.min.css", "LICENSE.md"],
+    },
+}
+
+
+def get_frontend_assets_marker_key(package: str) -> str:
+    """Return the S3 key of the marker scripts/publish_frontend_assets.py
+    writes once every file of a FRONTEND_PACKAGES package is uploaded."""
+    return "/".join(
+        ["assets", package, FRONTEND_PACKAGES[package]["version"], ".published.json"]
+    )
+
+
+def get_frontend_asset_url(package: str, path: str) -> str:
+    """Return the URL of a file in a self-hosted FRONTEND_PACKAGES package;
+    `path` is relative to the package root, e.g. "dist/umd/UV.js"."""
+    return "/".join(
+        [
+            config("ALCHEMIST_BASE_URL").rstrip("/"),
+            "assets",
+            package,
+            FRONTEND_PACKAGES[package]["version"],
+            path,
+        ]
+    )
+
+
 parser = argparse.ArgumentParser(
     description="Publication workflow for Caltech Archives."
 )
@@ -1075,6 +1122,11 @@ def generate_archival_object_page(
                     iiif_manifest_url=iiif_manifest_url,
                     iiif_manifest_json=json.dumps({"manifest": iiif_manifest_url}),
                     video_url=video_url,
+                    pico_css_url=get_frontend_asset_url("pico", "css/pico.min.css"),
+                    uv_js_url=get_frontend_asset_url(
+                        "universalviewer", "dist/umd/UV.js"
+                    ),
+                    uv_css_url=get_frontend_asset_url("universalviewer", "dist/uv.css"),
                     rights=RIGHTS_NOTICE_HTML,
                 )
             )
@@ -2074,6 +2126,30 @@ def validate_settings_for_publication(settings_validation_results: dict) -> None
     logger.debug("✅ ALL REQUIRED SETTINGS ARE SET AND USABLE")
 
 
+def validate_frontend_assets_for_publication() -> None:
+    """Every target regenerates pages that load FRONTEND_PACKAGES from the
+    bucket, so publishing before scripts/publish_frontend_assets.py has
+    uploaded the pinned versions leaves those pages without styles or a
+    viewer."""
+    unpublished = []
+    for package, details in FRONTEND_PACKAGES.items():
+        response = cascflow.s3_get_object(
+            config("ALCHEMIST_BUCKET"), get_frontend_assets_marker_key(package)
+        )
+        if (
+            response is None
+            or json.loads(response["Body"].read()).get("integrity")
+            != details["integrity"]
+        ):
+            unpublished.append(f"{package} {details['version']}")
+    if unpublished:
+        logger.error("❌ FRONT-END ASSETS NOT PUBLISHED TO THE BUCKET")
+        for package in unpublished:
+            logger.error(f"❌ {package}: run scripts/publish_frontend_assets.py")
+        raise RuntimeError("❌ FRONT-END ASSETS VALIDATION FAILED")
+    logger.debug("✅ ALL FRONT-END ASSETS ARE PUBLISHED")
+
+
 def validate_digital_files_for_publication(
     validation_results: dict, pipeline: str
 ) -> None:
@@ -2220,6 +2296,7 @@ def main():
     if args.command == "validate":
         settings_validation_results = cascflow.validate_settings(ALCHEMIST_SETTINGS_SPEC)
         validate_settings_for_publication(settings_validation_results)
+        validate_frontend_assets_for_publication()
         if args.target == "metadata":
             logger.info(args.context)
             validation_results = cascflow.validate_metadata_identifier(args.context)

@@ -1778,3 +1778,119 @@ def test_migrate_legacy_s3_object_keeps_mp4_filename_and_copies_thumbnail(
             "ark:99999/abc123x/thumbnail.webp",
         ),
     }
+
+
+@pytest.mark.parametrize("mimetype", ["", "video/mp4"])
+def test_generate_archival_object_page_loads_self_hosted_assets(monkeypatch, mimetype):
+    arrangement = {
+        "collection_id": "collection_1",
+        "collection_uri": "/repositories/2/resources/1",
+    }
+    archival_object = {
+        "component_id": "aspace_1",
+        "title": "Test Title",
+        "uri": "/repositories/2/archival_objects/1",
+        "external_ark_url": "https://resolver.example.edu/ark:99999/abc123x",
+        "linked_agents": [],
+        "dates": [],
+        "extents": [],
+        "subjects": [],
+        "notes": [],
+    }
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "ALCHEMIST_BASE_URL": "https://digital.example.edu/",
+            "OUR_NMA": "resolver.example.edu",
+            "ARCHIVESSPACE_PUBLIC_URL": "https://archivesspace.example.edu",
+        }.get(key, kwargs.get("default")),
+    )
+
+    alchemist.generate_archival_object_page(
+        build_directory, archival_object, arrangement, mimetype=mimetype
+    )
+
+    page = (
+        Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
+    ).read_text()
+    assert (
+        '<link rel="stylesheet" href="https://digital.example.edu/assets/pico/2.1.1/css/pico.min.css">'
+        in page
+    )
+    if not mimetype:
+        assert (
+            '<script src="https://digital.example.edu/assets/universalviewer/4.4.4/dist/umd/UV.js"></script>'
+            in page
+        )
+        assert (
+            '<link rel="stylesheet" href="https://digital.example.edu/assets/universalviewer/4.4.4/dist/uv.css">'
+            in page
+        )
+    assert "cdn.jsdelivr.net" not in page
+
+
+def _frontend_markers(packages):
+    return {
+        alchemist.get_frontend_assets_marker_key(name): json.dumps(
+            {"integrity": alchemist.FRONTEND_PACKAGES[name]["integrity"]}
+        )
+        for name in packages
+    }
+
+
+def _patch_marker_store(monkeypatch, markers):
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {"ALCHEMIST_BUCKET": "test-bucket"}.get(
+            key, kwargs.get("default")
+        ),
+    )
+
+    def fake_s3_get_object(bucket, key):
+        if key not in markers:
+            return None
+        return {"Body": SimpleNamespace(read=lambda: markers[key].encode())}
+
+    monkeypatch.setattr(alchemist.cascflow, "s3_get_object", fake_s3_get_object)
+
+
+def test_validate_frontend_assets_for_publication_passes_when_all_published(
+    monkeypatch,
+):
+    _patch_marker_store(
+        monkeypatch, _frontend_markers(alchemist.FRONTEND_PACKAGES.keys())
+    )
+
+    alchemist.validate_frontend_assets_for_publication()
+
+
+def test_validate_frontend_assets_for_publication_raises_when_marker_missing(
+    monkeypatch,
+):
+    _patch_marker_store(monkeypatch, _frontend_markers(["pico"]))
+
+    with pytest.raises(RuntimeError, match="FRONT-END ASSETS VALIDATION FAILED"):
+        alchemist.validate_frontend_assets_for_publication()
+
+
+def test_validate_frontend_assets_for_publication_raises_on_integrity_mismatch(
+    monkeypatch,
+):
+    markers = _frontend_markers(alchemist.FRONTEND_PACKAGES.keys())
+    markers[alchemist.get_frontend_assets_marker_key("universalviewer")] = json.dumps(
+        {"integrity": "sha512-somethingelse"}
+    )
+    _patch_marker_store(monkeypatch, markers)
+
+    with pytest.raises(RuntimeError, match="FRONT-END ASSETS VALIDATION FAILED"):
+        alchemist.validate_frontend_assets_for_publication()
+
+
+def test_get_frontend_assets_marker_key():
+    assert (
+        alchemist.get_frontend_assets_marker_key("universalviewer")
+        == "assets/universalviewer/4.4.4/.published.json"
+    )

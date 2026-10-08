@@ -6,7 +6,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@next/css/pico.min.css">
+    <link rel="stylesheet" href="{{ pico_css_url }}">
     <title>{{ title }}</title>
     <style>/* reset progressive block spacing */
       @media (min-width: 1536px) {

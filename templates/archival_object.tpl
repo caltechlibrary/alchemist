@@ -6,10 +6,10 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@next/css/pico.min.css">
+    <link rel="stylesheet" href="{{ pico_css_url }}">
     <title>{{ title }}</title>
-    <script src="https://cdn.jsdelivr.net/npm/universalviewer@4.0.17/dist/umd/UV.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/universalviewer@4.0.17/dist/uv.min.css">
+    <script src="{{ uv_js_url }}"></script>
+    <link rel="stylesheet" href="{{ uv_css_url }}">
     <style>/* reset progressive block spacing */
       @media (min-width: 1536px) {
         body > footer, body > header, body > main, section {
@@ -375,7 +375,11 @@
           cb({
             options: { rightPanelEnabled: false, termsOfUseEnabled: false },
             modules: {
+              // the image view draws its footer from searchFooterPanel
+              // (mobileFooterPanel on small screens), not footerPanel
               footerPanel: { options: { shareEnabled: false } },
+              mobileFooterPanel: { options: { shareEnabled: false } },
+              searchFooterPanel: { options: { shareEnabled: false } },
               openSeadragonCenterPanel: { options: { requiredStatementEnabled: false } },
             },
           });
