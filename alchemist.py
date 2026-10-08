@@ -35,7 +35,7 @@ PYRAMID_TILE_SIZE = 256
 PYRAMID_TIFF_METADATA_MAX_WORKERS = 20
 
 # npm packages the generated pages load, self-hosted under
-# {ALCHEMIST_BASE_URL}/assets/{name}/{version}/ by
+# {ALCHEMIST_BASE_URL}/alchemist/assets/{name}/{version}/ by
 # scripts/publish_frontend_assets.py. Published pages reference these
 # versioned URLs permanently, so a published version is never overwritten
 # or deleted; upgrading a package means publishing the new version alongside
@@ -58,13 +58,24 @@ FRONTEND_PACKAGES = {
     },
 }
 
+# S3 key prefix, and URL path below ALCHEMIST_BASE_URL, of the self-hosted
+# FRONTEND_PACKAGES; whatever serves the published pages must also serve
+# /alchemist/assets/* from the bucket
+FRONTEND_ASSETS_PREFIX = "alchemist/assets"
+
+
+def get_frontend_package_key_prefix(package: str) -> str:
+    """Return the S3 key prefix (no trailing slash) of a FRONTEND_PACKAGES
+    package's pinned version."""
+    return "/".join(
+        [FRONTEND_ASSETS_PREFIX, package, FRONTEND_PACKAGES[package]["version"]]
+    )
+
 
 def get_frontend_assets_marker_key(package: str) -> str:
     """Return the S3 key of the marker scripts/publish_frontend_assets.py
     writes once every file of a FRONTEND_PACKAGES package is uploaded."""
-    return "/".join(
-        ["assets", package, FRONTEND_PACKAGES[package]["version"], ".published.json"]
-    )
+    return f"{get_frontend_package_key_prefix(package)}/.published.json"
 
 
 def get_frontend_asset_url(package: str, path: str) -> str:
@@ -73,9 +84,7 @@ def get_frontend_asset_url(package: str, path: str) -> str:
     return "/".join(
         [
             config("ALCHEMIST_BASE_URL").rstrip("/"),
-            "assets",
-            package,
-            FRONTEND_PACKAGES[package]["version"],
+            get_frontend_package_key_prefix(package),
             path,
         ]
     )

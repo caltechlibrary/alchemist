@@ -1816,16 +1816,16 @@ def test_generate_archival_object_page_loads_self_hosted_assets(monkeypatch, mim
         Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
     ).read_text()
     assert (
-        '<link rel="stylesheet" href="https://digital.example.edu/assets/pico/2.1.1/css/pico.min.css">'
+        '<link rel="stylesheet" href="https://digital.example.edu/alchemist/assets/pico/2.1.1/css/pico.min.css">'
         in page
     )
     if not mimetype:
         assert (
-            '<script src="https://digital.example.edu/assets/universalviewer/4.4.4/dist/umd/UV.js"></script>'
+            '<script src="https://digital.example.edu/alchemist/assets/universalviewer/4.4.4/dist/umd/UV.js"></script>'
             in page
         )
         assert (
-            '<link rel="stylesheet" href="https://digital.example.edu/assets/universalviewer/4.4.4/dist/uv.css">'
+            '<link rel="stylesheet" href="https://digital.example.edu/alchemist/assets/universalviewer/4.4.4/dist/uv.css">'
             in page
         )
     assert "cdn.jsdelivr.net" not in page
@@ -1892,5 +1892,5 @@ def test_validate_frontend_assets_for_publication_raises_on_integrity_mismatch(
 def test_get_frontend_assets_marker_key():
     assert (
         alchemist.get_frontend_assets_marker_key("universalviewer")
-        == "assets/universalviewer/4.4.4/.published.json"
+        == "alchemist/assets/universalviewer/4.4.4/.published.json"
     )

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # file: scripts/publish_frontend_assets.py
 # Publish the npm packages the generated pages load (FRONTEND_PACKAGES in
-# alchemist.py) to {ALCHEMIST_BUCKET}/assets/{name}/{version}/, so pages are
-# served without a third-party CDN.
+# alchemist.py) to {ALCHEMIST_BUCKET}/alchemist/assets/{name}/{version}/, so
+# pages are served without a third-party CDN.
 #
 # Each tarball is downloaded from the npm registry and checked against the
 # integrity hash pinned in FRONTEND_PACKAGES before anything is uploaded.
@@ -30,7 +30,11 @@ import boto3  # pypi: boto3
 from decouple import Config, RepositoryIni  # pypi: python-decouple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from alchemist import FRONTEND_PACKAGES, get_frontend_assets_marker_key  # noqa: E402
+from alchemist import (  # noqa: E402
+    FRONTEND_PACKAGES,
+    get_frontend_assets_marker_key,
+    get_frontend_package_key_prefix,
+)
 
 logger = logging.getLogger("publish_frontend_assets")
 
@@ -97,7 +101,7 @@ def publish_package(s3_client, bucket: str, name: str, dry_run: bool) -> int:
     """Publish one FRONTEND_PACKAGES entry; return the number of files
     uploaded (or that would be, with dry_run)."""
     package = FRONTEND_PACKAGES[name]
-    key_prefix = f"assets/{name}/{package['version']}"
+    key_prefix = get_frontend_package_key_prefix(name)
     url = tarball_url(package["npm_name"], package["version"])
     logger.info(f"downloading {url}")
     with urllib.request.urlopen(url) as response:

@@ -142,26 +142,28 @@ def test_publish_package_uploads_only_missing_keys(monkeypatch):
         {"dist/a.js": b"a", "dist/b.css": b"b", "LICENSE": b"MIT", "README.md": b""}
     )
     _patch_package(monkeypatch, tarball, sri(tarball))
-    s3 = FakeS3(existing_keys={"assets/testpkg/1.0.0/dist/a.js"})
+    s3 = FakeS3(existing_keys={"alchemist/assets/testpkg/1.0.0/dist/a.js"})
 
     uploaded = publish.publish_package(s3, "bucket", "testpkg", dry_run=False)
 
     assert uploaded == 2
     assert set(s3.puts) == {
-        "assets/testpkg/1.0.0/dist/b.css",
-        "assets/testpkg/1.0.0/LICENSE",
-        "assets/testpkg/1.0.0/.published.json",
+        "alchemist/assets/testpkg/1.0.0/dist/b.css",
+        "alchemist/assets/testpkg/1.0.0/LICENSE",
+        "alchemist/assets/testpkg/1.0.0/.published.json",
     }
     # the marker is written last, once every file is in place
-    assert list(s3.puts)[-1] == "assets/testpkg/1.0.0/.published.json"
-    marker = json.loads(s3.puts["assets/testpkg/1.0.0/.published.json"]["Body"])
+    assert list(s3.puts)[-1] == "alchemist/assets/testpkg/1.0.0/.published.json"
+    marker = json.loads(
+        s3.puts["alchemist/assets/testpkg/1.0.0/.published.json"]["Body"]
+    )
     assert marker == {
         "npm_name": "testpkg",
         "version": "1.0.0",
         "integrity": sri(tarball),
         "files": 3,
     }
-    css = s3.puts["assets/testpkg/1.0.0/dist/b.css"]
+    css = s3.puts["alchemist/assets/testpkg/1.0.0/dist/b.css"]
     assert css["Body"] == b"b"
     assert css["ContentType"] == "text/css"
     assert css["CacheControl"] == "public, max-age=31536000, immutable"
@@ -191,9 +193,9 @@ def test_publish_package_keeps_an_existing_marker(monkeypatch):
     _patch_package(monkeypatch, tarball, sri(tarball))
     s3 = FakeS3(
         existing_keys={
-            "assets/testpkg/1.0.0/dist/a.js",
-            "assets/testpkg/1.0.0/LICENSE",
-            "assets/testpkg/1.0.0/.published.json",
+            "alchemist/assets/testpkg/1.0.0/dist/a.js",
+            "alchemist/assets/testpkg/1.0.0/LICENSE",
+            "alchemist/assets/testpkg/1.0.0/.published.json",
         }
     )
 

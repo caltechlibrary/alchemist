@@ -234,9 +234,14 @@ uv sync --all-groups
 ### Front-End Packages
 
 The generated pages load Universal Viewer and Pico CSS from the Alchemist
-bucket, not a CDN, at `{ALCHEMIST_BASE_URL}/assets/{name}/{version}/`. The
-pinned versions, npm integrity hashes and published paths are
-`FRONTEND_PACKAGES` in `alchemist.py`.
+bucket, not a CDN, at
+`{ALCHEMIST_BASE_URL}/alchemist/assets/{name}/{version}/`. The pinned
+versions, npm integrity hashes and published paths are `FRONTEND_PACKAGES`
+in `alchemist.py`.
+
+Whatever serves the published pages must also serve `/alchemist/assets/*`
+from the Alchemist bucket; otherwise the pages load without their styles
+or viewers.
 
 Every published page keeps the asset URLs it was rendered with, so a
 published version must stay in the bucket unchanged. To upgrade a package:
@@ -254,9 +259,9 @@ published version must stay in the bucket unchanged. To upgrade a package:
    The script verifies each tarball against its pinned hash, uploads only
    keys not already in the bucket, and uses your normal AWS credentials
    rather than `settings.ini`'s. Once every file is uploaded it writes an
-   `assets/{name}/{version}/.published.json` marker; `alchemist.py validate`
-   fails for every target until each pinned package has one with a matching
-   hash.
+   `alchemist/assets/{name}/{version}/.published.json` marker;
+   `alchemist.py validate` fails for every target until each pinned package
+   has one with a matching hash.
 3. Republish pages (a `metadata` run regenerates them) for them to pick up
    the new version; pages not republished keep loading the old one.
 
