@@ -1557,3 +1557,230 @@ def test_validate_metadata_for_update_happy_path_no_exception():
     }
 
     alchemist.validate_metadata_for_update(validation_results)
+
+
+def _video_config(key, **kwargs):
+    return {
+        "ALCHEMIST_BASE_URL": "https://digital.example.edu",
+        "ALCHEMIST_BUCKET": "test-bucket",
+        "ARCHIVESSPACE_PUBLIC_URL": "https://archivesspace.example.edu",
+        "OUR_NMA": "resolver.example.edu",
+    }.get(key, kwargs.get("default"))
+
+
+def _published_video_archival_object(web_access_url):
+    return {
+        "component_id": "aspace_1",
+        "title": "Test Title",
+        "uri": "/repositories/2/archival_objects/1",
+        "external_ark_url": "https://resolver.example.edu/ark:99999/abc123x",
+        "linked_agents": [],
+        "dates": [],
+        "extents": [],
+        "subjects": [],
+        "notes": [],
+        "instances": [
+            {
+                "digital_object": {
+                    "_resolved": {
+                        "file_versions": [
+                            {
+                                "file_uri": web_access_url,
+                                "use_statement": "Web-Access",
+                                "publish": True,
+                            }
+                        ]
+                    }
+                }
+            }
+        ],
+    }
+
+
+def test_get_published_video_filename_lists_ark_prefix(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    listed_prefixes = []
+
+    def fake_s3_list_object_keys(bucket, prefix):
+        listed_prefixes.append(prefix)
+        return [
+            "ark:99999/abc123x/aspace_1.mp4",
+            "ark:99999/abc123x/index.html",
+            "ark:99999/abc123x/thumbnail.webp",
+        ]
+
+    monkeypatch.setattr(
+        alchemist.cascflow, "s3_list_object_keys", fake_s3_list_object_keys
+    )
+
+    assert alchemist.get_published_video_filename(archival_object) == "aspace_1.mp4"
+    assert listed_prefixes == ["ark:99999/abc123x/"]
+
+
+def test_get_published_video_filename_lists_legacy_prefix(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/collections/collection_1/aspace_1"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    listed_prefixes = []
+
+    def fake_s3_list_object_keys(bucket, prefix):
+        listed_prefixes.append(prefix)
+        return ["collections/collection_1/aspace_1/aspace_1.mp4"]
+
+    monkeypatch.setattr(
+        alchemist.cascflow, "s3_list_object_keys", fake_s3_list_object_keys
+    )
+
+    assert alchemist.get_published_video_filename(archival_object) == "aspace_1.mp4"
+    assert listed_prefixes == ["collections/collection_1/aspace_1/"]
+
+
+def test_get_published_video_filename_returns_none_for_images(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "ark:99999/abc123x/0001.ptif",
+            "ark:99999/abc123x/manifest.json",
+        ],
+    )
+
+    assert alchemist.get_published_video_filename(archival_object) is None
+
+
+def test_get_published_video_filename_raises_on_multiple_mp4s(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "ark:99999/abc123x/a.mp4",
+            "ark:99999/abc123x/b.mp4",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="MULTIPLE MP4 FILES"):
+        alchemist.get_published_video_filename(archival_object)
+
+
+def test_metadata_only_video_renders_video_page_without_manifest(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    arrangement = {
+        "collection_id": "collection_1",
+        "collection_uri": "/repositories/2/resources/1",
+    }
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "ark:99999/abc123x/aspace_1.mp4",
+            "ark:99999/abc123x/index.html",
+            "ark:99999/abc123x/thumbnail.webp",
+        ],
+    )
+
+    def fail_s3_get_object(bucket, key):
+        raise AssertionError(f"video objects have no manifest to load: {key}")
+
+    monkeypatch.setattr(alchemist.cascflow, "s3_get_object", fail_s3_get_object)
+
+    alchemist.archival_object_level_processing(
+        build_directory, [], archival_object, arrangement, {}
+    )
+
+    object_directory = Path(build_directory.name) / "collection_1" / "aspace_1"
+    page = (object_directory / "index.html").read_text()
+    assert (
+        '<source src="https://digital.example.edu/ark:99999/abc123x/aspace_1.mp4"'
+        in page
+    )
+    assert "UV.init" not in page
+    assert not (object_directory / "manifest.json").exists()
+
+
+def test_generate_archival_object_page_links_published_video_file(
+    monkeypatch,
+):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    arrangement = {
+        "collection_id": "collection_1",
+        "collection_uri": "/repositories/2/resources/1",
+    }
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(alchemist, "config", _video_config)
+
+    alchemist.generate_archival_object_page(
+        build_directory,
+        archival_object,
+        arrangement,
+        mimetype="video/mp4",
+        video_filename="example_05_01.mp4",
+    )
+
+    page = (
+        Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
+    ).read_text()
+    assert (
+        '<source src="https://digital.example.edu/ark:99999/abc123x/example_05_01.mp4"'
+        in page
+    )
+
+
+def test_migrate_legacy_s3_object_keeps_mp4_filename_and_copies_thumbnail(
+    monkeypatch,
+):
+    archival_object = _migration_archival_object(
+        "https://digital.example.edu/collections/collection_1/aspace_1"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "collections/collection_1/aspace_1/aspace_1.mp4",
+            "collections/collection_1/aspace_1/index.html",
+            "collections/collection_1/aspace_1/thumbnail.webp",
+        ],
+    )
+    copy_calls = []
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_copy_object",
+        lambda bucket, source_key, dest_key: copy_calls.append((source_key, dest_key)),
+    )
+    monkeypatch.setattr(
+        alchemist.cascflow, "s3_put_object", lambda bucket, key, **kwargs: None
+    )
+
+    result = alchemist.migrate_legacy_s3_object(
+        archival_object, "ark:99999/abc123x", copy_ptifs=True
+    )
+
+    assert result == {"0001": Path("aspace_1.mp4")}
+    assert set(copy_calls) == {
+        (
+            "collections/collection_1/aspace_1/aspace_1.mp4",
+            "ark:99999/abc123x/aspace_1.mp4",
+        ),
+        (
+            "collections/collection_1/aspace_1/thumbnail.webp",
+            "ark:99999/abc123x/thumbnail.webp",
+        ),
+    }

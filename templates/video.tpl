@@ -276,7 +276,7 @@
         {% endif %}
       </hgroup>
       <video style="width:100%" controls>
-        <source src="{{ iiif_manifest_url }}" type="video/mp4" />
+        <source src="{{ video_url }}" type="video/mp4" />
       </video>
       <dl id="metadata">
         <dt>Title</dt>

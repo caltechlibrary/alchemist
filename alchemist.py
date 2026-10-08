@@ -971,6 +971,7 @@ def generate_archival_object_page(
     archival_object: dict,
     arrangement: dict,
     mimetype: str,
+    video_filename: str = "",
 ) -> None:
     try:
         logger.debug(f"🐞 BUILD_DIRECTORY.NAME: {build_directory.name}")
@@ -979,12 +980,23 @@ def generate_archival_object_page(
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        iiif_manifest_url = ""
+        video_url = ""
         if mimetype and mimetype.startswith("video/"):
-            # TODO use IIIF Presentation API 3.0; manifest.json files can supply video
             # NOTE template currently only handles mp4 files
             template = environment.get_template("video.tpl")
-            iiif_manifest_url = (
-                f"{archival_object['component_id']}.{mimetype.split('/')[-1]}"
+            video_url = "/".join(
+                [
+                    config("ALCHEMIST_BASE_URL").rstrip("/"),
+                    # TODO handle potential ARK Qualifier upstream
+                    archival_object["external_ark_url"]
+                    .split(config("OUR_NMA"))[-1]
+                    .split("/")[1],
+                    archival_object["external_ark_url"]
+                    .split(config("OUR_NMA"))[-1]
+                    .split("/")[2],
+                    video_filename,
+                ]
             )
         else:
             template = environment.get_template("archival_object.tpl")
@@ -1056,6 +1068,7 @@ def generate_archival_object_page(
                     archival_object_uri=archival_object["uri"],
                     iiif_manifest_url=iiif_manifest_url,
                     iiif_manifest_json=json.dumps({"manifest": iiif_manifest_url}),
+                    video_url=video_url,
                     rights=RIGHTS_NOTICE_HTML,
                 )
             )
@@ -1096,6 +1109,40 @@ def get_published_web_access_url(archival_object: dict) -> str | None:
         if file_version.get("use_statement") == "Web-Access":
             return file_version.get("file_uri")
     return None
+
+
+def get_published_key_prefix(archival_object: dict) -> str:
+    """Return the S3 key prefix (no trailing slash) where archival_object's
+    access files were last published: the path of its "Web-Access"
+    file_version URL if it has one (see get_published_web_access_url()),
+    otherwise the ARK-based prefix."""
+    web_access_url = get_published_web_access_url(archival_object)
+    if web_access_url:
+        return web_access_url.split(config("ALCHEMIST_BASE_URL").rstrip("/") + "/", 1)[
+            -1
+        ]
+    # TODO handle potential ARK Qualifier upstream
+    return "/".join(
+        archival_object["external_ark_url"].split(config("OUR_NMA"))[-1].split("/")[1:3]
+    )
+
+
+def get_published_video_filename(archival_object: dict) -> str | None:
+    """Return the filename of the MP4 published for archival_object, or None
+    if it has none. The metadata-only pipeline has no source files to read a
+    mimetype from, so what is already in S3 is the only record of whether an
+    object is a video."""
+    prefix = get_published_key_prefix(archival_object)
+    mp4_filenames = [
+        key.rsplit("/", 1)[-1]
+        for key in cascflow.s3_list_object_keys(
+            config("ALCHEMIST_BUCKET"), f"{prefix}/"
+        )
+        if key.endswith(".mp4")
+    ]
+    if len(mp4_filenames) > 1:
+        raise ValueError(f"❌ MULTIPLE MP4 FILES PUBLISHED UNDER: {prefix}")
+    return mp4_filenames[0] if mp4_filenames else None
 
 
 def get_legacy_thumbnail_identifier(archival_object: dict) -> str | None:
@@ -1218,14 +1265,21 @@ def migrate_legacy_s3_object(
     for filename in legacy_mp4_filenames:
         sequenced_filepaths.setdefault(get_sequence_indicator(Path(filename)), Path(filename))
 
-    # The new key's filename must be {indicator}{suffix}, matching how
+    # A ptif's new key's filename must be {indicator}.ptif, matching how
     # get_thumbnail_url()/build_current_file_versions() construct the
     # ARK-based IIIF identifier from the indicator alone -- legacy filenames
     # don't necessarily already follow that convention (pre-ARK naming used
-    # the source file's own stem), so copies rename rather than preserve.
+    # the source file's own stem), so ptif copies rename rather than
+    # preserve. An mp4 keeps its filename, as it does in a full
+    # files/publication run; generate_archival_object_page() links to it by
+    # that name. Its thumbnail.webp is what get_thumbnail_url() points the
+    # image-thumbnail file_version at, so it is copied alongside.
     if copy_ptifs:
         for indicator, legacy_path in sequenced_filepaths.items():
-            new_filename = f"{indicator}{legacy_path.suffix}"
+            if legacy_path.suffix == ".ptif":
+                new_filename = f"{indicator}{legacy_path.suffix}"
+            else:
+                new_filename = legacy_path.name
             cascflow.s3_copy_object(
                 bucket,
                 f"{legacy_prefix}/{legacy_path.name}",
@@ -1236,6 +1290,11 @@ def migrate_legacy_s3_object(
                 cascflow.s3_copy_object(
                     bucket, legacy_metadata_key, f"{our_ark}/{new_filename}.metadata.json"
                 )
+        legacy_thumbnail_key = f"{legacy_prefix}/thumbnail.webp"
+        if legacy_mp4_filenames and legacy_thumbnail_key in legacy_keys:
+            cascflow.s3_copy_object(
+                bucket, legacy_thumbnail_key, f"{our_ark}/thumbnail.webp"
+            )
 
     cascflow.s3_put_object(
         bucket,
@@ -1375,16 +1434,7 @@ def generate_iiif_manifest(
         # `files`/`publication` run (create_digital_object_file_versions())
         # rewrites this URL, so it is the authoritative current location,
         # not something to reconstruct from config.
-        web_access_url = get_published_web_access_url(archival_object)
-        if web_access_url:
-            manifest_key = (
-                web_access_url.split(config("ALCHEMIST_BASE_URL").rstrip("/") + "/", 1)[
-                    -1
-                ]
-                + "/manifest.json"
-            )
-        else:
-            manifest_key = ark_manifest_key
+        manifest_key = get_published_key_prefix(archival_object) + "/manifest.json"
         response = cascflow.s3_get_object(config("ALCHEMIST_BUCKET"), manifest_key)
         if response is None:
             raise FileNotFoundError(
@@ -1718,12 +1768,18 @@ def archival_object_level_processing(
     logger.debug(f"🐞 {archival_object['component_id']}")
     # TODO consider conditions for identifiying non-image file types
     mimetype = ""
+    video_filename = ""
     if filepaths and len(filepaths) == 1:
         type, encoding = mimetypes.guess_type(filepaths[0].as_posix())
         if type == "video/mp4":
             mimetype = type
+            video_filename = filepaths[0].name
+    elif not filepaths:
+        video_filename = get_published_video_filename(archival_object) or ""
+        if video_filename:
+            mimetype = "video/mp4"
     generate_archival_object_page(
-        build_directory, archival_object, arrangement, mimetype
+        build_directory, archival_object, arrangement, mimetype, video_filename
     )
     # `filepaths`` is set to [] if we are only updating metadata.
     generate_iiif_manifest(
