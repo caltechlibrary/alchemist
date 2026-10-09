@@ -1766,6 +1766,58 @@ def create_pyramid_tiff(
         raise
 
 
+def copy_video_with_thumbnail(
+    build_directory: tempfile.TemporaryDirectory[str],
+    filepath: Path,
+    archival_object: dict,
+    arrangement: dict,
+) -> None:
+    """Copy a video to the build directory as published, keeping its
+    filename, with a 200-pixel-wide thumbnail.webp of its midpoint frame
+    alongside it. Failures raise, so loop_over_archival_object_files()
+    reports them instead of publishing the object without its video."""
+    video_path = Path(build_directory.name).joinpath(
+        arrangement["collection_id"], archival_object["component_id"], filepath.name
+    )
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(filepath, video_path)
+    duration = subprocess.run(
+        [
+            config("FFPROBE_CMD"),
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            video_path.as_posix(),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    midpoint = str(float(duration) / 2)
+    subprocess.run(
+        [
+            config("FFMPEG_CMD"),
+            "-y",
+            "-v",
+            "error",
+            "-ss",
+            midpoint,
+            "-i",
+            video_path.as_posix(),
+            "-vframes",
+            "1",
+            "-vf",
+            "scale=200:-1",
+            video_path.parent.joinpath("thumbnail.webp").as_posix(),
+        ],
+        check=True,
+    )
+    logger.info(f"☑️ VIDEO FILE COPIED: {video_path.name}")
+
+
 def render_pdf_thumbnail(pdf_path: Path, thumbnail_path: Path) -> None:
     """Render the first page of a PDF as a 200-pixel-wide thumbnail with vips,
     which reads PDFs through poppler."""
@@ -1824,56 +1876,9 @@ def conditional_derivative_file_processing(
             build_directory, filepath, archival_object, arrangement, sequence_indicator
         )
     elif type.startswith("video/"):
-        video_key = "/".join(
-            [
-                arrangement["collection_id"],
-                archival_object["component_id"],
-                filepath.name,
-            ]
+        copy_video_with_thumbnail(
+            build_directory, filepath, archival_object, arrangement
         )
-        video_file_path = Path(build_directory.name).joinpath(video_key)
-        try:
-            video_file_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(filepath, video_file_path)
-            # create a thumbnail from the midpoint of the video
-            duration = subprocess.run(
-                [
-                    config("FFPROBE_CMD"),
-                    "-v",
-                    "error",
-                    "-show_entries",
-                    "format=duration",
-                    "-of",
-                    "default=noprint_wrappers=1:nokey=1",
-                    video_file_path.as_posix(),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout
-            midpoint = str(float(duration) / 2)
-            subprocess.run(
-                [
-                    config("FFMPEG_CMD"),
-                    "-y",
-                    "-v",
-                    "error",
-                    "-ss",
-                    midpoint,
-                    "-i",
-                    video_file_path.as_posix(),
-                    "-vframes",
-                    "1",
-                    "-vf",
-                    "scale=200:-1",
-                    video_file_path.parent.joinpath("thumbnail.webp").as_posix(),
-                ],
-                check=True,
-            )
-        except Exception:
-            logger.exception(f"❌ VIDEO FILE COPY FAILED: {filepath}")
-        else:
-            logger.info(f"☑️ VIDEO FILE COPIED: {video_key}")
     elif type == "application/pdf":
         copy_pdf_with_thumbnail(build_directory, filepath, archival_object, arrangement)
     else:

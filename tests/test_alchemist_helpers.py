@@ -2175,3 +2175,68 @@ def test_validate_digital_files_rejects_a_pdf_vips_cannot_render(monkeypatch, tm
 
     with pytest.raises(RuntimeError, match="CAN'T RENDER A THUMBNAIL"):
         alchemist.validate_digital_files_for_publication(validation_results, "files")
+
+
+def test_video_derivative_failure_propagates(monkeypatch, tmp_path):
+    source = tmp_path / "aspace_1.mp4"
+    source.write_bytes(b"not really a video")
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "FFPROBE_CMD": "ffprobe",
+            "FFMPEG_CMD": "ffmpeg",
+        }.get(key, kwargs.get("default")),
+    )
+
+    def fail_run(command, **kwargs):
+        raise subprocess.CalledProcessError(1, command, stderr="Invalid data")
+
+    monkeypatch.setattr(alchemist.subprocess, "run", fail_run)
+
+    # raising, rather than logging and carrying on, is what lets
+    # loop_over_archival_object_files() stop the object being published
+    with pytest.raises(subprocess.CalledProcessError):
+        alchemist.conditional_derivative_file_processing(
+            tempfile.TemporaryDirectory(),
+            source,
+            {"component_id": "aspace_1"},
+            {"collection_id": "collection_1"},
+            "0001",
+        )
+
+
+def test_copy_video_with_thumbnail_uses_the_midpoint_frame(monkeypatch, tmp_path):
+    source = tmp_path / "aspace_1.mp4"
+    source.write_bytes(b"video bytes")
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {
+            "FFPROBE_CMD": "ffprobe",
+            "FFMPEG_CMD": "ffmpeg",
+        }.get(key, kwargs.get("default")),
+    )
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(stdout="10.0\n")
+
+    monkeypatch.setattr(alchemist.subprocess, "run", fake_run)
+
+    alchemist.copy_video_with_thumbnail(
+        build_directory,
+        source,
+        {"component_id": "aspace_1"},
+        {"collection_id": "collection_1"},
+    )
+
+    published = Path(build_directory.name) / "collection_1" / "aspace_1"
+    assert (published / "aspace_1.mp4").read_bytes() == b"video bytes"
+    assert commands[0][0] == "ffprobe"
+    ffmpeg = commands[1]
+    assert ffmpeg[0] == "ffmpeg"
+    assert ffmpeg[ffmpeg.index("-ss") + 1] == "5.0"
+    assert ffmpeg[-1] == (published / "thumbnail.webp").as_posix()
