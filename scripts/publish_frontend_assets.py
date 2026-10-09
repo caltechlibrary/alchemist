@@ -9,8 +9,9 @@
 # Published versions are immutable: keys that already exist are never
 # rewritten, only missing ones are uploaded, so re-running after a partial
 # upload completes it. Once every file is in place, a .published.json marker
-# is written, which `alchemist.py validate` requires before any publication.
-# Run this before publishing pages that reference a new version.
+# is written, which `alchemist.py validate` requires before any publication;
+# a package whose marker is already in place is skipped without downloading
+# anything. Run this before publishing pages that reference a new version.
 
 import argparse
 import base64
@@ -102,6 +103,21 @@ def publish_package(s3_client, bucket: str, name: str, dry_run: bool) -> int:
     uploaded (or that would be, with dry_run)."""
     package = FRONTEND_PACKAGES[name]
     key_prefix = get_frontend_package_key_prefix(name)
+    marker_key = get_frontend_assets_marker_key(name)
+    existing = list_existing_keys(s3_client, bucket, key_prefix)
+    if marker_key in existing:
+        marker = json.loads(
+            s3_client.get_object(Bucket=bucket, Key=marker_key)["Body"].read()
+        )
+        if marker.get("integrity") != package["integrity"]:
+            # published versions are immutable, so this can't be repaired by
+            # uploading over it
+            raise IntegrityError(
+                f"s3://{bucket}/{marker_key} records {marker.get('integrity')}, "
+                f"not the pinned {package['integrity']}"
+            )
+        logger.info(f"{name} {package['version']}: already published")
+        return 0
     url = tarball_url(package["npm_name"], package["version"])
     logger.info(f"downloading {url}")
     with urllib.request.urlopen(url) as response:
@@ -118,7 +134,6 @@ def publish_package(s3_client, bucket: str, name: str, dry_run: bool) -> int:
         files = select_files(
             Path(extract_directory) / "package", package["paths"], key_prefix
         )
-        existing = list_existing_keys(s3_client, bucket, key_prefix)
         missing = {key: path for key, path in files.items() if key not in existing}
         logger.info(
             f"{name} {package['version']}: {len(files)} files, "
@@ -138,8 +153,7 @@ def publish_package(s3_client, bucket: str, name: str, dry_run: bool) -> int:
             logger.debug(f"uploaded s3://{bucket}/{key}")
     # written only after every file is in place: `alchemist.py validate`
     # treats the marker as the package being fully published
-    marker_key = get_frontend_assets_marker_key(name)
-    if marker_key not in existing and not dry_run:
+    if not dry_run:
         s3_client.put_object(
             Bucket=bucket,
             Key=marker_key,

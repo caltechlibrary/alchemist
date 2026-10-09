@@ -30,9 +30,13 @@ def sri(data: bytes) -> str:
 
 
 class FakeS3:
-    def __init__(self, existing_keys=()):
-        self.existing_keys = set(existing_keys)
+    def __init__(self, existing_keys=(), objects=None):
+        self.objects = dict(objects or {})
+        self.existing_keys = set(existing_keys) | set(self.objects)
         self.puts = {}
+
+    def get_object(self, Bucket, Key):
+        return {"Body": io.BytesIO(self.objects[Key])}
 
     def get_paginator(self, name):
         assert name == "list_objects_v2"
@@ -188,16 +192,43 @@ def test_publish_package_uploads_nothing_when_integrity_fails(monkeypatch):
     assert s3.puts == {}
 
 
-def test_publish_package_keeps_an_existing_marker(monkeypatch):
+def test_publish_package_skips_published_package_without_downloading(
+    monkeypatch,
+):
     tarball = build_tarball({"dist/a.js": b"a", "LICENSE": b"MIT"})
     _patch_package(monkeypatch, tarball, sri(tarball))
+
+    def fail_urlopen(url):
+        raise AssertionError(f"published package was downloaded: {url}")
+
+    monkeypatch.setattr(publish.urllib.request, "urlopen", fail_urlopen)
     s3 = FakeS3(
         existing_keys={
             "alchemist/assets/testpkg/1.0.0/dist/a.js",
             "alchemist/assets/testpkg/1.0.0/LICENSE",
-            "alchemist/assets/testpkg/1.0.0/.published.json",
-        }
+        },
+        objects={
+            "alchemist/assets/testpkg/1.0.0/.published.json": json.dumps(
+                {"integrity": sri(tarball)}
+            ).encode()
+        },
     )
 
     assert publish.publish_package(s3, "bucket", "testpkg", dry_run=False) == 0
+    assert s3.puts == {}
+
+
+def test_publish_package_rejects_marker_with_other_integrity(monkeypatch):
+    tarball = build_tarball({"dist/a.js": b"a", "LICENSE": b"MIT"})
+    _patch_package(monkeypatch, tarball, sri(tarball))
+    s3 = FakeS3(
+        objects={
+            "alchemist/assets/testpkg/1.0.0/.published.json": json.dumps(
+                {"integrity": sri(b"something else")}
+            ).encode()
+        },
+    )
+
+    with pytest.raises(publish.IntegrityError, match="not the pinned"):
+        publish.publish_package(s3, "bucket", "testpkg", dry_run=False)
     assert s3.puts == {}
