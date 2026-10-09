@@ -10,6 +10,7 @@ import mimetypes
 import shutil
 import subprocess
 import tempfile
+import urllib.parse
 
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -985,9 +986,14 @@ def generate_archival_object_page(
         if mimetype and mimetype.startswith("video/"):
             # NOTE template currently only handles mp4 files
             template = environment.get_template("video.tpl")
+            # root-relative: the page and its video are always served from
+            # the same host, so leaving the host out keeps the page working
+            # if the site's hostname changes
             video_url = "/".join(
                 [
-                    config("ALCHEMIST_BASE_URL").rstrip("/"),
+                    urllib.parse.urlparse(config("ALCHEMIST_BASE_URL")).path.rstrip(
+                        "/"
+                    ),
                     # TODO handle potential ARK Qualifier upstream
                     archival_object["external_ark_url"]
                     .split(config("OUR_NMA"))[-1]

@@ -1705,10 +1705,7 @@ def test_metadata_only_video_renders_video_page_without_manifest(monkeypatch):
 
     object_directory = Path(build_directory.name) / "collection_1" / "aspace_1"
     page = (object_directory / "index.html").read_text()
-    assert (
-        '<source src="https://digital.example.edu/ark:99999/abc123x/aspace_1.mp4"'
-        in page
-    )
+    assert '<source src="/ark:99999/abc123x/aspace_1.mp4"' in page
     assert "UV.init" not in page
     assert not (object_directory / "manifest.json").exists()
 
@@ -1737,10 +1734,7 @@ def test_generate_archival_object_page_links_published_video_file(
     page = (
         Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
     ).read_text()
-    assert (
-        '<source src="https://digital.example.edu/ark:99999/abc123x/example_05_01.mp4"'
-        in page
-    )
+    assert '<source src="/ark:99999/abc123x/example_05_01.mp4"' in page
 
 
 def test_migrate_legacy_s3_object_keeps_mp4_filename_and_copies_thumbnail(
