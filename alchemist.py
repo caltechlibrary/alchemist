@@ -1109,7 +1109,7 @@ def generate_archival_object_page(
                 template = environment.get_template("video.tpl")
                 video_url = media_url
         else:
-            template = environment.get_template("archival_object.tpl")
+            template = environment.get_template("iiif.tpl")
             # TODO Q: should this be a resolver link instead of a direct link to the manifest file?
             # Leaning towards resolver link, but we must ensure Suffix Passthrough on the resolver,
             # and that our external_ark_url does not have a Qualifier.
