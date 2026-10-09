@@ -78,12 +78,15 @@ def get_frontend_assets_marker_key(package: str) -> str:
     return f"{get_frontend_package_key_prefix(package)}/.published.json"
 
 
-def get_frontend_asset_url(package: str, path: str) -> str:
-    """Return the URL of a file in a self-hosted FRONTEND_PACKAGES package;
-    `path` is relative to the package root, e.g. "dist/umd/UV.js"."""
+def get_frontend_asset_path(package: str, path: str) -> str:
+    """Return the root-relative URL of a file in a self-hosted
+    FRONTEND_PACKAGES package; `path` is relative to the package root, e.g.
+    "dist/umd/UV.js". Pages and assets are always served from the same host,
+    so leaving the host out keeps published pages working if the site's
+    hostname changes; ALCHEMIST_BASE_URL's own path, if it has one, is kept."""
     return "/".join(
         [
-            config("ALCHEMIST_BASE_URL").rstrip("/"),
+            urllib.parse.urlparse(config("ALCHEMIST_BASE_URL")).path.rstrip("/"),
             get_frontend_package_key_prefix(package),
             path,
         ]
@@ -1131,11 +1134,13 @@ def generate_archival_object_page(
                     iiif_manifest_url=iiif_manifest_url,
                     iiif_manifest_json=json.dumps({"manifest": iiif_manifest_url}),
                     video_url=video_url,
-                    pico_css_url=get_frontend_asset_url("pico", "css/pico.min.css"),
-                    uv_js_url=get_frontend_asset_url(
+                    pico_css_url=get_frontend_asset_path("pico", "css/pico.min.css"),
+                    uv_js_url=get_frontend_asset_path(
                         "universalviewer", "dist/umd/UV.js"
                     ),
-                    uv_css_url=get_frontend_asset_url("universalviewer", "dist/uv.css"),
+                    uv_css_url=get_frontend_asset_path(
+                        "universalviewer", "dist/uv.css"
+                    ),
                     rights=RIGHTS_NOTICE_HTML,
                 )
             )
