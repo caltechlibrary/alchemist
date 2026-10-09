@@ -4,13 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.6.0]
 
 ### Changed
 
 - rename the `ABSOLUTE_MOUNT_PARENT` setting to `SOURCE_MOUNT_PARENT` (cascflow v5.0.0), which names the mount it refers to; every `settings.ini` needs the new key
 - pin cascflow to v5.0.0, up from v4.5.0 -- adds the `OCFL-Object-Root` entry to `FILE_VERSION_USE_STATEMENT_ORDER`, so Distillery's preservation `file_version` sorts after the web-access entries rather than below the legacy `URL-Redirected` ones
 - pin arkminter to v1.0.0, which declares stable the API Alchemist has been minting production ARKs with; no functional change from v0.2.1
+- generated pages load Universal Viewer 4.4.4, up from 4.0.17, and Pico CSS 2.1.1, pinned instead of the moving `@next` tag, from the Alchemist bucket at `{ALCHEMIST_BASE_URL}/alchemist/assets/{name}/{version}/` rather than jsDelivr, so viewing a page makes no third-party CDN requests for them; versions and npm integrity hashes are pinned in `FRONTEND_PACKAGES`, and pages reference the files by root-relative path so they keep working if the site's hostname changes -- pages published earlier keep loading 4.0.17 from jsDelivr until they are republished
+- `validate` now fails for every target until each pinned front-end package is published to the bucket (see Added); the site in front of the bucket must also serve `/alchemist/assets/*` from it -- see [DEVELOPMENT.md](DEVELOPMENT.md#front-end-packages)
 
 ### Security
 
@@ -19,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `docs/decisions/`: architecturally significant decisions are now recorded as [ADRs](https://adr.github.io/madr/); see [ADR 0001](docs/decisions/0001-record-architecture-decisions.md) for the conventions
+- `scripts/publish_frontend_assets.py`: publishes the pinned front-end packages to the bucket, rejecting any npm tarball that doesn't match its pinned integrity hash; it never rewrites a published file, skips packages already published, and writes a `.published.json` marker once a package's files are all in place, which `validate` requires
+
+### Fixed
+
+- the `metadata` target now updates published video objects -- with no source files to read a mimetype from, it rebuilt a video object's page with the Universal Viewer template pointed at a `manifest.json` video objects never get, then raised "MANIFEST NOT FOUND IN S3"; it now finds the object's MP4 among its published files (at its legacy or ARK-based location), renders the video template, and skips the manifest
+- video pages link the MP4 actually published, by root-relative path, rather than a relative `{component_id}.mp4`, which broke when the page was served without a trailing slash or the file was named differently
+- migrating a legacy video object keeps the MP4's filename, as a full `files`/`publication` run does, instead of renaming it `{indicator}.mp4`, and copies its `thumbnail.webp` too, so the `image-thumbnail` file_version points at a file that exists
+- image pages hide the Share button as configured -- the image view draws its footer from `searchFooterPanel` (`mobileFooterPanel` on small screens), so `shareEnabled: false` is now set there as well as on `footerPanel`
 
 ## [3.5.3]
 
