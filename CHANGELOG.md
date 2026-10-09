@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - the `metadata` target recognizes a published PDF the way it recognizes a published video, rendering the PDF page and skipping the manifest
 - a front-end package's `.published.json` marker records its download source as `source` rather than `npm_name`; `validate` reads only its integrity hash, so markers already published are unaffected
+- the image, video and PDF page templates extend a shared `templates/base.tpl` holding the common header, styles, metadata list and footer, and `archival_object.tpl` is renamed `iiif.tpl`; pages render exactly as before
+
+### Fixed
+
+- a video whose copy, `ffprobe` or thumbnail step fails now stops its archival object from being published -- the failure was logged and the object published without its video
 
 ## [3.6.0]
 
