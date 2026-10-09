@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- PDF publication: an archival object's single PDF file is published as-is with a `thumbnail.webp` of its first page rendered by vips, and its page embeds Mozilla's PDF.js viewer (6.4.299, self-hosted like the other front-end packages) with search, thumbnails, outline, zoom, print and download; the page turns off running JavaScript embedded in PDFs and the viewer's editing tools, and its digital_object type is `text`; as with video, no IIIF manifest is generated
+- `validate` rejects a PDF inside a directory (a PDF is its archival object's only file) and renders each PDF's thumbnail up front, so a PDF vips can't read, or a machine whose vips was built without PDF (poppler) support, fails validation instead of publication
+- `scripts/publish_frontend_assets.py` publishes packages from a release archive at a pinned URL as well as from npm, verified against a pinned sha256 or sha512 integrity hash
+
+### Changed
+
+- the `metadata` target recognizes a published PDF the way it recognizes a published video, rendering the PDF page and skipping the manifest
+- a front-end package's `.published.json` marker records its download source as `source` rather than `npm_name`; `validate` reads only its integrity hash, so markers already published are unaffected
+
 ## [3.6.0]
 
 ### Changed

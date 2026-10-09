@@ -4,6 +4,7 @@ import io
 import json
 import sys
 import tarfile
+import zipfile
 
 from pathlib import Path
 
@@ -162,7 +163,7 @@ def test_publish_package_uploads_only_missing_keys(monkeypatch):
         s3.puts["alchemist/assets/testpkg/1.0.0/.published.json"]["Body"]
     )
     assert marker == {
-        "npm_name": "testpkg",
+        "source": "testpkg",
         "version": "1.0.0",
         "integrity": sri(tarball),
         "files": 3,
@@ -232,3 +233,72 @@ def test_publish_package_rejects_marker_with_other_integrity(monkeypatch):
     with pytest.raises(publish.IntegrityError, match="not the pinned"):
         publish.publish_package(s3, "bucket", "testpkg", dry_run=False)
     assert s3.puts == {}
+
+
+def build_zip(files: dict[str, bytes]) -> bytes:
+    """Build a release-style .zip holding `files` at its root."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def sri256(data: bytes) -> str:
+    return "sha256-" + base64.b64encode(hashlib.sha256(data).digest()).decode()
+
+
+def test_verify_integrity_accepts_sha256():
+    publish.verify_integrity(b"release.zip", sri256(b"release.zip"))
+    with pytest.raises(publish.IntegrityError, match="expected sha256-"):
+        publish.verify_integrity(b"tampered", sri256(b"release.zip"))
+
+
+def test_package_url_uses_the_pinned_url_for_release_archives():
+    assert (
+        publish.package_url({"url": "https://example.edu/x-1.0.zip", "version": "1.0"})
+        == "https://example.edu/x-1.0.zip"
+    )
+
+
+def test_publish_package_publishes_a_release_zip(monkeypatch):
+    archive = build_zip(
+        {
+            "LICENSE": b"Apache",
+            "web/viewer.html": b"<html>",
+            "web/viewer.mjs": b"export {}",
+            "web/viewer.mjs.map": b"{}",
+        }
+    )
+    monkeypatch.setitem(
+        publish.FRONTEND_PACKAGES,
+        "testzip",
+        {
+            "url": "https://example.edu/testzip-2.0.zip",
+            "version": "2.0",
+            "integrity": sri256(archive),
+            "paths": ["LICENSE", "web/viewer.html", "web/viewer.mjs"],
+        },
+    )
+    requested = []
+
+    def fake_urlopen(url):
+        requested.append(url)
+        return io.BytesIO(archive)
+
+    monkeypatch.setattr(publish.urllib.request, "urlopen", fake_urlopen)
+    s3 = FakeS3()
+
+    assert publish.publish_package(s3, "bucket", "testzip", dry_run=False) == 3
+    assert requested == ["https://example.edu/testzip-2.0.zip"]
+    assert set(s3.puts) == {
+        "alchemist/assets/testzip/2.0/LICENSE",
+        "alchemist/assets/testzip/2.0/web/viewer.html",
+        "alchemist/assets/testzip/2.0/web/viewer.mjs",
+        "alchemist/assets/testzip/2.0/.published.json",
+    }
+    # module scripts only run when served with a JavaScript MIME type
+    module = s3.puts["alchemist/assets/testzip/2.0/web/viewer.mjs"]
+    assert module["ContentType"] == "text/javascript"
+    marker = json.loads(s3.puts["alchemist/assets/testzip/2.0/.published.json"]["Body"])
+    assert marker["source"] == "https://example.edu/testzip-2.0.zip"

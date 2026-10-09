@@ -34,13 +34,20 @@ PYRAMID_TILE_SIZE = 256
 # in S3; these are network-bound metadata-only copies, not data transfer
 PYRAMID_TIFF_METADATA_MAX_WORKERS = 20
 
-# npm packages the generated pages load, self-hosted under
+# media published as one file per archival object, with a page template of
+# its own instead of a IIIF manifest; a published file's suffix identifies it
+SINGLE_FILE_MEDIA_TYPES = {".mp4": "video/mp4", ".pdf": "application/pdf"}
+
+# Front-end packages the generated pages load, self-hosted under
 # {ALCHEMIST_BASE_URL}/alchemist/assets/{name}/{version}/ by
 # scripts/publish_frontend_assets.py. Published pages reference these
 # versioned URLs permanently, so a published version is never overwritten
 # or deleted; upgrading a package means publishing the new version alongside
-# the old one. `paths` are what gets published, relative to the package root;
-# `integrity` is the npm registry's Subresource Integrity hash of the tarball.
+# the old one. A package comes either from npm (`npm_name`) or from a release
+# archive at a pinned `url`. `paths` are what gets published, relative to the
+# package root; `integrity` is a Subresource Integrity hash of the download,
+# as the npm registry publishes it (sha512) or converted from the sha256
+# digest GitHub publishes for a release asset.
 FRONTEND_PACKAGES = {
     "universalviewer": {
         "npm_name": "universalviewer",
@@ -55,6 +62,29 @@ FRONTEND_PACKAGES = {
         "version": "2.1.1",
         "integrity": "sha512-kIDugA7Ps4U+2BHxiNHmvgPIQDWPDU4IeU6TNRdvXQM1uZX+FibqDQT2xUOnnO2yq/LUHcwnGlu1hvf4KfXnMg==",
         "paths": ["css/pico.min.css", "LICENSE.md"],
+    },
+    "pdfjs": {
+        # Mozilla's prebuilt viewer (web/viewer.html) is published only as a
+        # GitHub release zip; npm's pdfjs-dist has the library without it
+        "url": "https://github.com/mozilla/pdf.js/releases/download/v6.4.299/pdfjs-6.4.299-dist.zip",
+        "version": "6.4.299",
+        "integrity": "sha256-8iRet+8/Z0yHL+VooXe/7BWHT1wDRhPlXY4wf5Pr2G0=",
+        # what viewer.html loads, without source maps, the debugger, the
+        # sample PDF, or the scripting sandbox (pages turn scripting off)
+        "paths": [
+            "LICENSE",
+            "build/pdf.mjs",
+            "build/pdf.worker.mjs",
+            "web/viewer.html",
+            "web/viewer.mjs",
+            "web/viewer.css",
+            "web/images",
+            "web/locale",
+            "web/cmaps",
+            "web/standard_fonts",
+            "web/iccs",
+            "web/wasm",
+        ],
     },
 }
 
@@ -533,7 +563,9 @@ def get_thumbnail_url(
     arrangement: dict,
     sequenced_filepaths: dict[str, Path],
 ) -> str:
-    if next(iter(sequenced_filepaths.values())).suffix == ".mp4":
+    # single-file media (video, PDF) get a thumbnail.webp rendered alongside
+    # them, rather than a IIIF image of their own
+    if next(iter(sequenced_filepaths.values())).suffix.lower() in (".mp4", ".pdf"):
         return "/".join(
             [
                 config("ALCHEMIST_BASE_URL").rstrip("/"),
@@ -652,7 +684,7 @@ def create_digital_object_file_versions(
     filepaths = [
         f.absolute()
         for f in archival_object_directory.iterdir()
-        if f.is_file() and (f.name.endswith(".ptif") or f.name.endswith(".mp4"))
+        if f.is_file() and f.suffix.lower() in (".ptif", ".mp4", ".pdf")
     ]
     logger.debug(f"🐞 FILEPATHS[0]: {sorted(filepaths)[0]}")
 
@@ -660,6 +692,8 @@ def create_digital_object_file_versions(
         digital_object_type = "still_image"
     elif filepaths[0].name.endswith(".mp4"):
         digital_object_type = "moving_image"
+    elif filepaths[0].suffix.lower() == ".pdf":
+        digital_object_type = "text"
     elif filepaths[0].name.endswith(".mp3"):
         digital_object_type = "sound_recording"
     else:
@@ -1031,7 +1065,7 @@ def generate_archival_object_page(
     archival_object: dict,
     arrangement: dict,
     mimetype: str,
-    video_filename: str = "",
+    media_filename: str = "",
 ) -> None:
     try:
         logger.debug(f"🐞 BUILD_DIRECTORY.NAME: {build_directory.name}")
@@ -1042,13 +1076,12 @@ def generate_archival_object_page(
         )
         iiif_manifest_url = ""
         video_url = ""
-        if mimetype and mimetype.startswith("video/"):
-            # NOTE template currently only handles mp4 files
-            template = environment.get_template("video.tpl")
-            # root-relative: the page and its video are always served from
+        pdf_viewer_url = ""
+        if mimetype in SINGLE_FILE_MEDIA_TYPES.values():
+            # root-relative: the page and its media are always served from
             # the same host, so leaving the host out keeps the page working
             # if the site's hostname changes
-            video_url = "/".join(
+            media_url = "/".join(
                 [
                     urllib.parse.urlparse(config("ALCHEMIST_BASE_URL")).path.rstrip(
                         "/"
@@ -1060,9 +1093,21 @@ def generate_archival_object_page(
                     archival_object["external_ark_url"]
                     .split(config("OUR_NMA"))[-1]
                     .split("/")[2],
-                    video_filename,
+                    media_filename,
                 ]
             )
+            if mimetype == "application/pdf":
+                template = environment.get_template("pdf.tpl")
+                # PDF.js's viewer only opens files from its own origin, which
+                # a root-relative path always is
+                pdf_viewer_url = "{}?file={}".format(
+                    get_frontend_asset_path("pdfjs", "web/viewer.html"),
+                    urllib.parse.quote(media_url, safe=""),
+                )
+            else:
+                # NOTE template currently only handles mp4 files
+                template = environment.get_template("video.tpl")
+                video_url = media_url
         else:
             template = environment.get_template("archival_object.tpl")
             # TODO Q: should this be a resolver link instead of a direct link to the manifest file?
@@ -1134,6 +1179,7 @@ def generate_archival_object_page(
                     iiif_manifest_url=iiif_manifest_url,
                     iiif_manifest_json=json.dumps({"manifest": iiif_manifest_url}),
                     video_url=video_url,
+                    pdf_viewer_url=pdf_viewer_url,
                     pico_css_url=get_frontend_asset_path("pico", "css/pico.min.css"),
                     uv_js_url=get_frontend_asset_path(
                         "universalviewer", "dist/umd/UV.js"
@@ -1199,22 +1245,25 @@ def get_published_key_prefix(archival_object: dict) -> str:
     )
 
 
-def get_published_video_filename(archival_object: dict) -> str | None:
-    """Return the filename of the MP4 published for archival_object, or None
-    if it has none. The metadata-only pipeline has no source files to read a
-    mimetype from, so what is already in S3 is the only record of whether an
-    object is a video."""
+def get_published_media(archival_object: dict) -> tuple[str, str] | None:
+    """Return (mimetype, filename) of the single-file media (an MP4 or a PDF)
+    published for archival_object, or None if it has none. The metadata-only
+    pipeline has no source files to read a mimetype from, so what is already
+    in S3 is the only record of what kind of object it is."""
     prefix = get_published_key_prefix(archival_object)
-    mp4_filenames = [
+    media_filenames = [
         key.rsplit("/", 1)[-1]
         for key in cascflow.s3_list_object_keys(
             config("ALCHEMIST_BUCKET"), f"{prefix}/"
         )
-        if key.endswith(".mp4")
+        if Path(key).suffix.lower() in SINGLE_FILE_MEDIA_TYPES
     ]
-    if len(mp4_filenames) > 1:
-        raise ValueError(f"❌ MULTIPLE MP4 FILES PUBLISHED UNDER: {prefix}")
-    return mp4_filenames[0] if mp4_filenames else None
+    if len(media_filenames) > 1:
+        raise ValueError(f"❌ MULTIPLE MEDIA FILES PUBLISHED UNDER: {prefix}")
+    if not media_filenames:
+        return None
+    filename = media_filenames[0]
+    return SINGLE_FILE_MEDIA_TYPES[Path(filename).suffix.lower()], filename
 
 
 def get_legacy_thumbnail_identifier(archival_object: dict) -> str | None:
@@ -1405,8 +1454,9 @@ def generate_iiif_manifest(
     mimetype: str,
     sequenced_filepaths: dict[str, Path],
 ) -> None:
-    if mimetype == "video/mp4":
-        # TODO use IIIF Presentation API 3.0; manifest.json files can supply video
+    if mimetype in SINGLE_FILE_MEDIA_TYPES.values():
+        # single-file media pages play or display the file directly; nothing
+        # reads a manifest for them
         return
     metadata = []
     if arrangement.get("collection_title"):
@@ -1716,6 +1766,46 @@ def create_pyramid_tiff(
         raise
 
 
+def render_pdf_thumbnail(pdf_path: Path, thumbnail_path: Path) -> None:
+    """Render the first page of a PDF as a 200-pixel-wide thumbnail with vips,
+    which reads PDFs through poppler."""
+    subprocess.run(
+        [
+            config("VIPS_CMD"),
+            "thumbnail",
+            f"{pdf_path.as_posix()}[page=0]",
+            thumbnail_path.as_posix(),
+            "200",
+            # width 200 whatever the page's aspect ratio, like the video
+            # thumbnails; vips otherwise fits both sides within 200
+            "--height",
+            "10000",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def copy_pdf_with_thumbnail(
+    build_directory: tempfile.TemporaryDirectory[str],
+    filepath: Path,
+    archival_object: dict,
+    arrangement: dict,
+) -> None:
+    """Copy a PDF to the build directory as published, keeping its filename,
+    with a thumbnail.webp of its first page alongside it. Failures raise, so
+    loop_over_archival_object_files() reports them instead of publishing the
+    object without its PDF."""
+    pdf_path = Path(build_directory.name).joinpath(
+        arrangement["collection_id"], archival_object["component_id"], filepath.name
+    )
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(filepath, pdf_path)
+    render_pdf_thumbnail(pdf_path, pdf_path.parent / "thumbnail.webp")
+    logger.info(f"☑️ PDF FILE COPIED: {pdf_path.name}")
+
+
 def conditional_derivative_file_processing(
     build_directory: tempfile.TemporaryDirectory[str],
     filepath: Path,
@@ -1784,6 +1874,8 @@ def conditional_derivative_file_processing(
             logger.exception(f"❌ VIDEO FILE COPY FAILED: {filepath}")
         else:
             logger.info(f"☑️ VIDEO FILE COPIED: {video_key}")
+    elif type == "application/pdf":
+        copy_pdf_with_thumbnail(build_directory, filepath, archival_object, arrangement)
     else:
         logger.error(
             "❌ {} FILES ARE NOT SUPPORTED AT THIS TIME: {}".format(type, filepath.name)
@@ -1838,20 +1930,19 @@ def archival_object_level_processing(
     sequenced_filepaths: dict[str, Path],
 ) -> None:
     logger.debug(f"🐞 {archival_object['component_id']}")
-    # TODO consider conditions for identifiying non-image file types
     mimetype = ""
-    video_filename = ""
+    media_filename = ""
     if filepaths and len(filepaths) == 1:
         type, encoding = mimetypes.guess_type(filepaths[0].as_posix())
-        if type == "video/mp4":
+        if type in SINGLE_FILE_MEDIA_TYPES.values():
             mimetype = type
-            video_filename = filepaths[0].name
+            media_filename = filepaths[0].name
     elif not filepaths:
-        video_filename = get_published_video_filename(archival_object) or ""
-        if video_filename:
-            mimetype = "video/mp4"
+        published_media = get_published_media(archival_object)
+        if published_media:
+            mimetype, media_filename = published_media
     generate_archival_object_page(
-        build_directory, archival_object, arrangement, mimetype, video_filename
+        build_directory, archival_object, arrangement, mimetype, media_filename
     )
     # `filepaths`` is set to [] if we are only updating metadata.
     generate_iiif_manifest(
@@ -2116,7 +2207,7 @@ def is_archival_object_eligible_for_metadata_update(archival_object: dict) -> bo
 def is_publication_file_supported(entry: Path) -> bool:
     type, encoding = mimetypes.guess_type(entry.as_posix())
     ## TODO set supported types in configuration
-    if type and (type.startswith("image/") or type.endswith("/mp4")):
+    if type and (type.startswith("image/") or type in SINGLE_FILE_MEDIA_TYPES.values()):
         return True
     else:
         return False
@@ -2178,6 +2269,8 @@ def validate_digital_files_for_publication(
     empty_directories = validation_results.get("empty_directories", [])
     file_count = validation_results.get("file_count", 0)
     unsupported_files = []
+    pdfs_in_directories = []
+    unrenderable_pdfs = []
     missing_sequence_indicators = []
     sequence_indicators = {}
     # get the eligible archival object data from validation_results
@@ -2199,6 +2292,18 @@ def validate_digital_files_for_publication(
             ## check for file types that are unsupported in publication
             if not is_publication_file_supported(entry):
                 unsupported_files.append(entry)
+            elif entry.suffix.lower() == ".pdf":
+                # rendering the thumbnail now fails here, rather than midway
+                # through publication, on a PDF vips can't read or a machine
+                # whose vips lacks PDF support
+                with tempfile.TemporaryDirectory() as thumbnail_directory:
+                    try:
+                        render_pdf_thumbnail(
+                            entry, Path(thumbnail_directory) / "thumbnail.webp"
+                        )
+                    except subprocess.CalledProcessError as e:
+                        logger.debug(f"🐞 VIPS STDERR: {e.stderr}")
+                        unrenderable_pdfs.append(entry)
         if entry.is_dir():
             # Check all files in the directory for valid sequence indicators.
             children = [child for child in entry.iterdir() if child.is_file()]
@@ -2206,6 +2311,9 @@ def validate_digital_files_for_publication(
             for child in children:
                 if not is_publication_file_supported(child):
                     unsupported_files.append(child)
+                elif child.suffix.lower() == ".pdf":
+                    # a PDF is published as an archival object's only file
+                    pdfs_in_directories.append(child)
             logger.debug(
                 f"🐞 SEQUENCE_INDICATORS for {entry.stem}: {sequence_indicators[entry.stem]}"
             )
@@ -2250,6 +2358,18 @@ def validate_digital_files_for_publication(
         logger.error(message)
         for unsupported_file in unsupported_files:
             logger.error(f"❌ {unsupported_file}")
+        raise RuntimeError(message)
+    if pdfs_in_directories:
+        message = "❌ PDFS MUST BE PUBLISHED AS A SINGLE FILE, NOT IN A DIRECTORY"
+        logger.error(message)
+        for pdf in pdfs_in_directories:
+            logger.error(f"❌ {pdf}")
+        raise RuntimeError(message)
+    if unrenderable_pdfs:
+        message = "❌ PDFS VIPS CAN'T RENDER A THUMBNAIL FROM"
+        logger.error(message)
+        for pdf in unrenderable_pdfs:
+            logger.error(f"❌ {pdf}")
         raise RuntimeError(message)
 
 

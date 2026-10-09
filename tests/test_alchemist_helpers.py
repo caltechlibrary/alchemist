@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import tempfile
 
 from pathlib import Path
@@ -1597,7 +1599,7 @@ def _published_video_archival_object(web_access_url):
     }
 
 
-def test_get_published_video_filename_lists_ark_prefix(monkeypatch):
+def test_get_published_media_lists_ark_prefix(monkeypatch):
     archival_object = _published_video_archival_object(
         "https://digital.example.edu/ark:99999/abc123x"
     )
@@ -1616,11 +1618,14 @@ def test_get_published_video_filename_lists_ark_prefix(monkeypatch):
         alchemist.cascflow, "s3_list_object_keys", fake_s3_list_object_keys
     )
 
-    assert alchemist.get_published_video_filename(archival_object) == "aspace_1.mp4"
+    assert alchemist.get_published_media(archival_object) == (
+        "video/mp4",
+        "aspace_1.mp4",
+    )
     assert listed_prefixes == ["ark:99999/abc123x/"]
 
 
-def test_get_published_video_filename_lists_legacy_prefix(monkeypatch):
+def test_get_published_media_lists_legacy_prefix(monkeypatch):
     archival_object = _published_video_archival_object(
         "https://digital.example.edu/collections/collection_1/aspace_1"
     )
@@ -1635,11 +1640,14 @@ def test_get_published_video_filename_lists_legacy_prefix(monkeypatch):
         alchemist.cascflow, "s3_list_object_keys", fake_s3_list_object_keys
     )
 
-    assert alchemist.get_published_video_filename(archival_object) == "aspace_1.mp4"
+    assert alchemist.get_published_media(archival_object) == (
+        "video/mp4",
+        "aspace_1.mp4",
+    )
     assert listed_prefixes == ["collections/collection_1/aspace_1/"]
 
 
-def test_get_published_video_filename_returns_none_for_images(monkeypatch):
+def test_get_published_media_returns_none_for_images(monkeypatch):
     archival_object = _published_video_archival_object(
         "https://digital.example.edu/ark:99999/abc123x"
     )
@@ -1653,10 +1661,10 @@ def test_get_published_video_filename_returns_none_for_images(monkeypatch):
         ],
     )
 
-    assert alchemist.get_published_video_filename(archival_object) is None
+    assert alchemist.get_published_media(archival_object) is None
 
 
-def test_get_published_video_filename_raises_on_multiple_mp4s(monkeypatch):
+def test_get_published_media_raises_on_multiple_media_files(monkeypatch):
     archival_object = _published_video_archival_object(
         "https://digital.example.edu/ark:99999/abc123x"
     )
@@ -1670,8 +1678,8 @@ def test_get_published_video_filename_raises_on_multiple_mp4s(monkeypatch):
         ],
     )
 
-    with pytest.raises(ValueError, match="MULTIPLE MP4 FILES"):
-        alchemist.get_published_video_filename(archival_object)
+    with pytest.raises(ValueError, match="MULTIPLE MEDIA FILES"):
+        alchemist.get_published_media(archival_object)
 
 
 def test_metadata_only_video_renders_video_page_without_manifest(monkeypatch):
@@ -1728,7 +1736,7 @@ def test_generate_archival_object_page_links_published_video_file(
         archival_object,
         arrangement,
         mimetype="video/mp4",
-        video_filename="example_05_01.mp4",
+        media_filename="example_05_01.mp4",
     )
 
     page = (
@@ -1926,3 +1934,244 @@ def test_get_frontend_asset_path_is_root_relative(monkeypatch, base_url, expecte
         alchemist.get_frontend_asset_path("universalviewer", "dist/umd/UV.js")
         == expected
     )
+
+
+MINIMAL_PDF = (
+    b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+    b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+    b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 300]>>endobj\n"
+    b"trailer<</Root 1 0 R>>\n%%EOF\n"
+)
+
+
+def test_is_publication_file_supported_accepts_pdfs():
+    assert alchemist.is_publication_file_supported(Path("report.pdf")) is True
+    assert alchemist.is_publication_file_supported(Path("REPORT.PDF")) is True
+
+
+def test_get_published_media_finds_a_pdf(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "ark:99999/abc123x/Report.PDF",
+            "ark:99999/abc123x/index.html",
+            "ark:99999/abc123x/thumbnail.webp",
+        ],
+    )
+
+    assert alchemist.get_published_media(archival_object) == (
+        "application/pdf",
+        "Report.PDF",
+    )
+
+
+def test_get_published_media_raises_on_a_video_and_a_pdf(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "ark:99999/abc123x/a.mp4",
+            "ark:99999/abc123x/b.pdf",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="MULTIPLE MEDIA FILES"):
+        alchemist.get_published_media(archival_object)
+
+
+def test_generate_archival_object_page_embeds_the_pdfjs_viewer(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    archival_object["title"] = 'Report "Final"'
+    arrangement = {
+        "collection_id": "collection_1",
+        "collection_uri": "/repositories/2/resources/1",
+    }
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(alchemist, "config", _video_config)
+
+    alchemist.generate_archival_object_page(
+        build_directory,
+        archival_object,
+        arrangement,
+        mimetype="application/pdf",
+        media_filename="report.pdf",
+    )
+
+    page = (
+        Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
+    ).read_text()
+    assert (
+        '<iframe src="/alchemist/assets/pdfjs/6.4.299/web/viewer.html'
+        '?file=%2Fark%3A99999%2Fabc123x%2Freport.pdf"'
+    ) in page
+    assert 'title="Report &#34;Final&#34;"' in page
+    assert 'options.set("enableScripting", false);' in page
+    assert "<video" not in page
+    assert "UV.init" not in page
+
+
+def test_metadata_only_pdf_renders_pdf_page_without_manifest(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    arrangement = {
+        "collection_id": "collection_1",
+        "collection_uri": "/repositories/2/resources/1",
+    }
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "ark:99999/abc123x/report.pdf",
+            "ark:99999/abc123x/index.html",
+            "ark:99999/abc123x/thumbnail.webp",
+        ],
+    )
+
+    def fail_s3_get_object(bucket, key):
+        raise AssertionError(f"PDF objects have no manifest to load: {key}")
+
+    monkeypatch.setattr(alchemist.cascflow, "s3_get_object", fail_s3_get_object)
+
+    alchemist.archival_object_level_processing(
+        build_directory, [], archival_object, arrangement, {}
+    )
+
+    object_directory = Path(build_directory.name) / "collection_1" / "aspace_1"
+    page = (object_directory / "index.html").read_text()
+    assert "web/viewer.html?file=%2Fark%3A99999%2Fabc123x%2Freport.pdf" in page
+    assert not (object_directory / "manifest.json").exists()
+
+
+def test_get_thumbnail_url_for_a_pdf_is_its_rendered_thumbnail(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+
+    assert (
+        alchemist.get_thumbnail_url(
+            [], archival_object, {}, {"0001": Path("report.pdf")}
+        )
+        == "https://digital.example.edu/ark:99999/abc123x/thumbnail.webp"
+    )
+
+
+def test_copy_pdf_with_thumbnail_keeps_the_filename(monkeypatch, tmp_path):
+    source = tmp_path / "Report.PDF"
+    source.write_bytes(MINIMAL_PDF)
+    build_directory = tempfile.TemporaryDirectory()
+    rendered = []
+    monkeypatch.setattr(
+        alchemist,
+        "render_pdf_thumbnail",
+        lambda pdf_path, thumbnail_path: rendered.append((pdf_path, thumbnail_path)),
+    )
+
+    alchemist.copy_pdf_with_thumbnail(
+        build_directory,
+        source,
+        {"component_id": "aspace_1"},
+        {"collection_id": "collection_1"},
+    )
+
+    published = Path(build_directory.name) / "collection_1" / "aspace_1"
+    assert (published / "Report.PDF").read_bytes() == MINIMAL_PDF
+    assert rendered == [(published / "Report.PDF", published / "thumbnail.webp")]
+
+
+@pytest.mark.skipif(shutil.which("vips") is None, reason="vips not installed")
+def test_render_pdf_thumbnail_is_200_pixels_wide(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: {"VIPS_CMD": shutil.which("vips")}.get(
+            key, kwargs.get("default")
+        ),
+    )
+    pdf = tmp_path / "tall.pdf"
+    pdf.write_bytes(MINIMAL_PDF)
+
+    try:
+        alchemist.render_pdf_thumbnail(pdf, tmp_path / "thumbnail.webp")
+    except subprocess.CalledProcessError as e:
+        if "pdfload" in e.stderr or "is not a known file format" in e.stderr:
+            pytest.skip("vips was built without PDF support")
+        raise
+
+    header = subprocess.run(
+        [shutil.which("vipsheader") or "vipsheader", str(tmp_path / "thumbnail.webp")],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    # the 200x300 page keeps its aspect ratio at width 200
+    assert "200x300" in header
+
+
+def _validate_pdf_source(monkeypatch, tmp_path, entries, render=None):
+    source = tmp_path / "source"
+    source.mkdir()
+    for relative, content in entries.items():
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    monkeypatch.setattr(
+        alchemist, "is_archival_object_eligible_for_publication", lambda ao, p: True
+    )
+    if render:
+        monkeypatch.setattr(alchemist, "render_pdf_thumbnail", render)
+    return {
+        "source_path": str(source),
+        "eligible_archival_objects": {
+            Path(relative).parts[0].rsplit(".", 1)[0]: {} for relative in entries
+        },
+        "file_count": len(entries),
+    }
+
+
+def test_validate_digital_files_accepts_a_single_renderable_pdf(monkeypatch, tmp_path):
+    validation_results = _validate_pdf_source(
+        monkeypatch,
+        tmp_path,
+        {"report.pdf": MINIMAL_PDF},
+        render=lambda pdf_path, thumbnail_path: None,
+    )
+
+    alchemist.validate_digital_files_for_publication(validation_results, "files")
+
+
+def test_validate_digital_files_rejects_a_pdf_in_a_directory(monkeypatch, tmp_path):
+    validation_results = _validate_pdf_source(
+        monkeypatch,
+        tmp_path,
+        {"report/report_0001.pdf": MINIMAL_PDF},
+    )
+
+    with pytest.raises(RuntimeError, match="SINGLE FILE, NOT IN A DIRECTORY"):
+        alchemist.validate_digital_files_for_publication(validation_results, "files")
+
+
+def test_validate_digital_files_rejects_a_pdf_vips_cannot_render(monkeypatch, tmp_path):
+    def fail_render(pdf_path, thumbnail_path):
+        raise subprocess.CalledProcessError(1, ["vips"], stderr="not a known format")
+
+    validation_results = _validate_pdf_source(
+        monkeypatch, tmp_path, {"report.pdf": b"not a pdf"}, render=fail_render
+    )
+
+    with pytest.raises(RuntimeError, match="CAN'T RENDER A THUMBNAIL"):
+        alchemist.validate_digital_files_for_publication(validation_results, "files")

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # file: scripts/publish_frontend_assets.py
-# Publish the npm packages the generated pages load (FRONTEND_PACKAGES in
-# alchemist.py) to {ALCHEMIST_BUCKET}/alchemist/assets/{name}/{version}/, so
-# pages are served without a third-party CDN.
+# Publish the front-end packages the generated pages load (FRONTEND_PACKAGES
+# in alchemist.py) to {ALCHEMIST_BUCKET}/alchemist/assets/{name}/{version}/,
+# so pages are served without a third-party CDN.
 #
-# Each tarball is downloaded from the npm registry and checked against the
-# integrity hash pinned in FRONTEND_PACKAGES before anything is uploaded.
+# Each package is downloaded, as an npm tarball or a release zip from its
+# pinned URL, and checked against the integrity hash pinned in
+# FRONTEND_PACKAGES before anything is uploaded.
 # Published versions are immutable: keys that already exist are never
 # rewritten, only missing ones are uploaded, so re-running after a partial
 # upload completes it. Once every file is in place, a .published.json marker
@@ -23,6 +24,7 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+import zipfile
 
 from pathlib import Path
 
@@ -53,15 +55,41 @@ def tarball_url(npm_name: str, version: str) -> str:
     return f"{NPM_REGISTRY}/{npm_name}/-/{npm_name.split('/')[-1]}-{version}.tgz"
 
 
+def package_url(package: dict) -> str:
+    if "npm_name" in package:
+        return tarball_url(package["npm_name"], package["version"])
+    return package["url"]
+
+
 def verify_integrity(data: bytes, integrity: str) -> None:
-    """Raise IntegrityError unless `data` matches a sha512 Subresource
-    Integrity string, the form the npm registry publishes."""
+    """Raise IntegrityError unless `data` matches a sha512 or sha256
+    Subresource Integrity string."""
     algorithm, _, expected = integrity.partition("-")
-    if algorithm != "sha512":
+    if algorithm not in ("sha512", "sha256"):
         raise IntegrityError(f"unsupported integrity algorithm: {algorithm}")
-    actual = base64.b64encode(hashlib.sha512(data).digest()).decode()
+    actual = base64.b64encode(hashlib.new(algorithm, data).digest()).decode()
     if actual != expected:
-        raise IntegrityError(f"expected sha512-{expected}, got sha512-{actual}")
+        raise IntegrityError(
+            f"expected {algorithm}-{expected}, got {algorithm}-{actual}"
+        )
+
+
+def extract_package(package: dict, data: bytes, directory: Path) -> Path:
+    """Extract a downloaded package into `directory` and return its root."""
+    archive_path = directory / "download"
+    archive_path.write_bytes(data)
+    if "npm_name" in package:
+        with tarfile.open(archive_path) as archive:
+            # the "data" filter rejects absolute paths, links out of the
+            # destination, and device files
+            archive.extractall(directory / "extracted", filter="data")
+        # npm tarballs hold their contents under a top-level package/
+        return directory / "extracted" / "package"
+    with zipfile.ZipFile(archive_path) as archive:
+        # ZipFile.extractall drops absolute paths and ".." components, so
+        # nothing lands outside the destination
+        archive.extractall(directory / "extracted")
+    return directory / "extracted"
 
 
 def select_files(
@@ -118,22 +146,14 @@ def publish_package(s3_client, bucket: str, name: str, dry_run: bool) -> int:
             )
         logger.info(f"{name} {package['version']}: already published")
         return 0
-    url = tarball_url(package["npm_name"], package["version"])
+    url = package_url(package)
     logger.info(f"downloading {url}")
     with urllib.request.urlopen(url) as response:
         data = response.read()
     verify_integrity(data, package["integrity"])
     with tempfile.TemporaryDirectory() as extract_directory:
-        tarball = Path(extract_directory) / "package.tgz"
-        tarball.write_bytes(data)
-        with tarfile.open(tarball) as archive:
-            # the "data" filter rejects absolute paths, links out of the
-            # destination, and device files
-            archive.extractall(extract_directory, filter="data")
-        # npm tarballs hold their contents under a top-level package/
-        files = select_files(
-            Path(extract_directory) / "package", package["paths"], key_prefix
-        )
+        package_root = extract_package(package, data, Path(extract_directory))
+        files = select_files(package_root, package["paths"], key_prefix)
         missing = {key: path for key, path in files.items() if key not in existing}
         logger.info(
             f"{name} {package['version']}: {len(files)} files, "
@@ -159,7 +179,7 @@ def publish_package(s3_client, bucket: str, name: str, dry_run: bool) -> int:
             Key=marker_key,
             Body=json.dumps(
                 {
-                    "npm_name": package["npm_name"],
+                    "source": package.get("npm_name") or package["url"],
                     "version": package["version"],
                     "integrity": package["integrity"],
                     "files": len(files),

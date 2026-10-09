@@ -233,11 +233,13 @@ uv sync --all-groups
 
 ### Front-End Packages
 
-The generated pages load Universal Viewer and Pico CSS from the Alchemist
-bucket, not a CDN, at
+The generated pages load Universal Viewer, Pico CSS and Mozilla's PDF.js
+viewer from the Alchemist bucket, not a CDN, at
 `{ALCHEMIST_BASE_URL}/alchemist/assets/{name}/{version}/`. The pinned
-versions, npm integrity hashes and published paths are `FRONTEND_PACKAGES`
-in `alchemist.py`.
+versions, sources, integrity hashes and published paths are
+`FRONTEND_PACKAGES` in `alchemist.py`. Universal Viewer and Pico come from
+npm; PDF.js's prebuilt viewer is published only as a GitHub release zip, so
+its entry pins the zip's URL instead.
 
 Whatever serves the published pages must also serve `/alchemist/assets/*`
 from the Alchemist bucket; otherwise the pages load without their styles
@@ -246,9 +248,17 @@ or viewers.
 Every published page keeps the asset URLs it was rendered with, so a
 published version must stay in the bucket unchanged. To upgrade a package:
 
-1. Update its `version` and `integrity` in `FRONTEND_PACKAGES` (`npm view
-   <package>@<version> dist.integrity` prints the hash), and check that its
-   `paths` still exist in the new tarball.
+1. Update its `version` (and, for PDF.js, `url`) and `integrity` in
+   `FRONTEND_PACKAGES`, and check that its `paths` still exist in the new
+   download. For an npm package, `npm view <package>@<version>
+   dist.integrity` prints the hash. For a release zip, GitHub publishes a
+   sha256 digest, which converts to the integrity format like this:
+
+   ```bash
+   gh api repos/mozilla/pdf.js/releases/tags/v<version> \
+     --jq '.assets[] | select(.name == "pdfjs-<version>-dist.zip") | .digest'
+   python3 -c "import base64,sys; print('sha256-' + base64.b64encode(bytes.fromhex(sys.argv[1])).decode())" <hex digest>
+   ```
 2. Publish the assets before publishing any page that references them:
 
    ```bash
