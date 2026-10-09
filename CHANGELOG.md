@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0]
+
 ### Added
 
 - PDF publication: an archival object's single PDF file is published as-is with a `thumbnail.webp` of its first page rendered by vips, and its page embeds Mozilla's PDF.js viewer (6.4.299, self-hosted like the other front-end packages) with search, thumbnails, outline, zoom, print and download; the page turns off running JavaScript embedded in PDFs and the viewer's editing tools, and its digital_object type is `text`; as with video, no IIIF manifest is generated
