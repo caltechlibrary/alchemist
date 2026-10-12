@@ -234,23 +234,57 @@ uv sync --all-groups
 
 ### Front-End Packages
 
-The generated pages load Universal Viewer, Pico CSS and Mozilla's PDF.js
-viewer from the Alchemist bucket, not a CDN, at
-`{ALCHEMIST_BASE_URL}/alchemist/assets/{name}/{version}/`. The pinned
-versions, sources, integrity hashes and published paths are
-`FRONTEND_PACKAGES` in `alchemist.py`. Universal Viewer and Pico come from
-npm; PDF.js's prebuilt viewer is published only as a GitHub release zip, so
-its entry pins the zip's URL instead.
+Generated pages load three third-party front-end packages. Alchemist serves
+its own copies of them from the Alchemist bucket rather than from a CDN:
 
-Whatever serves the published pages must also serve `/alchemist/assets/*`
-from the Alchemist bucket; otherwise the pages load without their styles
-or viewers.
+| Package | Loaded by | Used on |
+|---|---|---|
+| Pico CSS | `templates/base.tpl` | every page |
+| Universal Viewer | `templates/iiif.tpl` | image pages |
+| Mozilla’s PDF.js viewer | `templates/pdf.tpl` | PDF pages |
+
+Each one lives at `{ALCHEMIST_BASE_URL}/alchemist/assets/{name}/{version}/`.
+`FRONTEND_PACKAGES` in `alchemist.py` pins each package’s version, download
+source, integrity hash, and the files to publish. Universal Viewer and Pico
+come from npm; PDF.js’s prebuilt viewer is published only as a GitHub
+release zip, so its entry pins the zip’s URL instead. Whatever serves the
+published pages must also serve `/alchemist/assets/*` from the bucket;
+otherwise the pages load without their styles or viewers.
+
+#### Publishing the packages
+
+`scripts/publish_frontend_assets.py` copies the pinned packages into the
+bucket. It is not part of publishing pages. Run it:
+
+- once for each bucket Alchemist publishes to, and
+- again whenever a version in `FRONTEND_PACKAGES` changes, before publishing
+  with the Alchemist release that pins it.
+
+`alchemist.py validate` fails for every target, naming the script, until
+each pinned version’s `.published.json` marker is in the bucket, so a missed
+run stops publication rather than producing broken pages.
+
+Run it from a checkout with AWS credentials that can write to the bucket.
+It uses your own AWS profile, not the keys in `settings.ini`, which supplies
+only the bucket name (`--bucket` overrides it):
+
+```bash
+uv run scripts/publish_frontend_assets.py --dry-run
+uv run scripts/publish_frontend_assets.py
+```
+
+It checks each download against its pinned hash before uploading, never
+rewrites a published version, and uploads only missing files, so re-running
+it completes a partial upload.
+
+#### Upgrading a package
 
 Every published page keeps the asset URLs it was rendered with, so a
-published version must stay in the bucket unchanged. To upgrade a package:
+published version must stay in the bucket unchanged; an upgrade publishes
+the new version alongside the old one.
 
-1. Update its `version` (and, for PDF.js, `url`) and `integrity` in
-   `FRONTEND_PACKAGES`, and check that its `paths` still exist in the new
+1. Update the package’s `version` (and, for PDF.js, `url`) and `integrity`
+   in `FRONTEND_PACKAGES`, and check that its `paths` still exist in the new
    download. For an npm package, `npm view <package>@<version>
    dist.integrity` prints the hash. For a release zip, GitHub publishes a
    sha256 digest, which converts to the integrity format like this:
@@ -260,21 +294,9 @@ published version must stay in the bucket unchanged. To upgrade a package:
      --jq '.assets[] | select(.name == "pdfjs-<version>-dist.zip") | .digest'
    python3 -c "import base64,sys; print('sha256-' + base64.b64encode(bytes.fromhex(sys.argv[1])).decode())" <hex digest>
    ```
-2. Publish the assets before publishing any page that references them:
-
-   ```bash
-   uv run scripts/publish_frontend_assets.py --dry-run
-   uv run scripts/publish_frontend_assets.py
-   ```
-
-   The script verifies each tarball against its pinned hash, uploads only
-   keys not already in the bucket, and uses your normal AWS credentials
-   rather than `settings.ini`'s. Once every file is uploaded it writes an
-   `alchemist/assets/{name}/{version}/.published.json` marker;
-   `alchemist.py validate` fails for every target until each pinned package
-   has one with a matching hash.
-3. Republish pages (a `metadata` run regenerates them) for them to pick up
-   the new version; pages not republished keep loading the old one.
+2. Run `scripts/publish_frontend_assets.py` as above.
+3. Republish pages for them to pick up the new version; a `metadata` run
+   regenerates them. Pages not republished keep loading the old version.
 
 ## Release & Versioning
 
