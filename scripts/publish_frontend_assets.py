@@ -241,9 +241,8 @@ def main():
         config = Config(RepositoryIni(settings_path.as_posix()))
         bucket = config("ALCHEMIST_BUCKET")
 
-    # Credentials come from the operator's normal AWS credential chain, as in
-    # scripts/backfill_pyramid_tiff_metadata.py: this is a manually-run
-    # deployment tool, not the automated pipeline.
+    # Credentials come from the operator's normal AWS credential chain: this
+    # is a manually run deployment tool.
     s3_client = boto3.client("s3")
 
     for name in args.package or sorted(FRONTEND_PACKAGES):

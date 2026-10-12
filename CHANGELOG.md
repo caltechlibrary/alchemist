@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `LICENSE` (modified BSD 3-clause) and `codemeta.json`
+
+### Changed
+
+- `README.md`, `CONFIGURATION.md` and `DEVELOPMENT.md` describe installing, configuring and running Alchemist
+
+### Removed
+
+- `scripts/backfill_pyramid_tiff_metadata.py`, the one-off backfill of pyramid TIFF metadata, which has been run
+
+### Fixed
+
+- `--settings` help states the actual default, `settings.ini` next to `alchemist.py`
+
 ## [3.7.0]
 
 ### Added

@@ -21,7 +21,6 @@ cascflow = { git = "https://github.com/caltechlibrary/cascflow", tag = "v5.0.0" 
 
 [dependency-groups]
 dev = [
-    "aws-cdk-lib",
     "decouple-types",
     "pytest",
     "ruff",

@@ -61,11 +61,12 @@ uv run pytest tests/test_alchemist_helpers.py::test_has_valid_sequence_indicator
 
 ### Test Coverage
 
-The project has 25 unit tests covering:
+The tests cover:
 
 - ArchivesSpace integration (`test_alchemist_archivesspace.py`)
 - Helper functions like sequence validation, formatting (`test_alchemist_helpers.py`)
 - Integration workflows with mocked ArchivesSpace (`test_alchemist_integration_mocked_aspace.py`)
+- Publishing the self-hosted front-end packages (`test_publish_frontend_assets.py`)
 
 Tests use pytest fixtures to mock ArchivesSpace responses and maintain deterministic behavior.
 
