@@ -5,11 +5,11 @@
 
 ## Context and Problem Statement
 
-Some of Alchemist's design choices are only legible as the absence of
+Some of Alchemist’s design choices are only legible as the absence of
 something: a simpler approach was tried, failed for a non-obvious reason, and
 the shipped code is shaped by that failure. Nothing in the code records this.
 The next person to read it -- human or LLM -- sees only the surviving design
-and is free to "simplify" it back into the thing that already didn't work.
+and is free to “simplify” it back into the thing that already didn’t work.
 
 Ad hoc planning documents are a poor home for that knowledge: they mix
 durable rationale with build checklists that expire the moment the work
@@ -20,7 +20,7 @@ what shipped.
 
 Record architecturally significant decisions as ADRs in `docs/decisions/`,
 following [MADR](https://adr.github.io/madr/). The format originates with
-Michael Nygard's [Documenting Architecture
+Michael Nygard’s [Documenting Architecture
 Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).
 
 Conventions:
@@ -32,7 +32,7 @@ Conventions:
 - **ADRs are immutable once accepted.** A decision that changes is not edited;
   a new ADR supersedes it, and the old one is marked as superseded. The record
   of having believed the old thing is the point.
-- Corrections of *fact* about what shipped are fine to amend in place, dated
+- Corrections of *fact* about what shipped are fine to amend in place, dated,
   and noted. Changes of *decision* get a new ADR.
 - Record the rejected options and why. That is usually the most valuable part
   and the part that cannot be recovered from the code.
