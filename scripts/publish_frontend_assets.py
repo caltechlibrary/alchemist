@@ -1,18 +1,33 @@
 #!/usr/bin/env python3
 # file: scripts/publish_frontend_assets.py
-# Publish the front-end packages the generated pages load (FRONTEND_PACKAGES
-# in alchemist.py) to {ALCHEMIST_BUCKET}/alchemist/assets/{name}/{version}/,
-# so pages are served without a third-party CDN.
+# Publish the third-party front-end code that generated pages load, so
+# pages are served without a third-party CDN:
 #
-# Each package is downloaded, as an npm tarball or a release zip from its
-# pinned URL, and checked against the integrity hash pinned in
-# FRONTEND_PACKAGES before anything is uploaded.
-# Published versions are immutable: keys that already exist are never
-# rewritten, only missing ones are uploaded, so re-running after a partial
-# upload completes it. Once every file is in place, a .published.json marker
-# is written, which `alchemist.py validate` requires before any publication;
-# a package whose marker is already in place is skipped without downloading
-# anything. Run this before publishing pages that reference a new version.
+#   Pico CSS           templates/base.tpl, every page
+#   Universal Viewer   templates/iiif.tpl, image pages
+#   PDF.js viewer      templates/pdf.tpl, PDF pages
+#
+# FRONTEND_PACKAGES in alchemist.py pins each package’s version, download,
+# and integrity hash; the templates link to the copies this script puts at
+# {ALCHEMIST_BUCKET}/alchemist/assets/{name}/{version}/.
+#
+# When to run: once for each bucket Alchemist publishes to, and again
+# whenever a FRONTEND_PACKAGES version changes, before publishing with the
+# Alchemist release that pins it. It is not part of publishing itself:
+# `alchemist.py validate` fails, naming this script, until every pinned
+# version’s .published.json marker is in the bucket.
+#
+# How to run: from a checkout, with AWS credentials that can write to the
+# bucket (your own AWS profile; settings.ini supplies only the bucket name,
+# and --bucket overrides it):
+#
+#   uv run scripts/publish_frontend_assets.py --dry-run
+#   uv run scripts/publish_frontend_assets.py
+#
+# Each download is checked against its pinned hash before anything is
+# uploaded. Published versions are never rewritten: only missing files are
+# uploaded, so re-running after a partial upload completes it, and the
+# marker is written last.
 
 import argparse
 import base64
@@ -241,8 +256,7 @@ def main():
         config = Config(RepositoryIni(settings_path.as_posix()))
         bucket = config("ALCHEMIST_BUCKET")
 
-    # Credentials come from the operator's normal AWS credential chain: this
-    # is a manually run deployment tool.
+    # your own AWS credentials; see the header
     s3_client = boto3.client("s3")
 
     for name in args.package or sorted(FRONTEND_PACKAGES):
