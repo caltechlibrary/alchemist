@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the Matomo tracker on generated pages is configured by the optional `MATOMO_URL` and `MATOMO_SITE_ID` settings and left out unless both are set
 - `README.md`, `CONFIGURATION.md` and `DEVELOPMENT.md` describe installing, configuring and running Alchemist
 
 ### Removed

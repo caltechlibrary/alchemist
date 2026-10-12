@@ -1745,6 +1745,59 @@ def test_generate_archival_object_page_links_published_video_file(
     assert '<source src="/ark:99999/abc123x/example_05_01.mp4"' in page
 
 
+def _render_video_page(monkeypatch, config):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    arrangement = {
+        "collection_id": "collection_1",
+        "collection_uri": "/repositories/2/resources/1",
+    }
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(alchemist, "config", config)
+    alchemist.generate_archival_object_page(
+        build_directory,
+        archival_object,
+        arrangement,
+        mimetype="video/mp4",
+        media_filename="aspace_1.mp4",
+    )
+    return (
+        Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
+    ).read_text()
+
+
+def test_generated_page_omits_matomo_tracker_by_default(monkeypatch):
+    page = _render_video_page(monkeypatch, _video_config)
+    assert "matomo" not in page
+
+
+def test_generated_page_includes_configured_matomo_tracker(monkeypatch):
+    def config(key, **kwargs):
+        return {
+            "MATOMO_URL": "https://analytics.example.org/",
+            "MATOMO_SITE_ID": "7",
+        }.get(key) or _video_config(key, **kwargs)
+
+    page = _render_video_page(monkeypatch, config)
+    assert (
+        'src="https://analytics.example.org/matomo.php?idsite=7&amp;rec=1"' in page
+    )
+
+
+def test_matomo_tracker_needs_both_settings(monkeypatch):
+    monkeypatch.setattr(
+        alchemist,
+        "config",
+        lambda key, **kwargs: (
+            "https://analytics.example.org/"
+            if key == "MATOMO_URL"
+            else kwargs.get("default")
+        ),
+    )
+    assert alchemist.get_matomo_tracker_url() == ""
+
+
 def test_migrate_legacy_s3_object_keeps_mp4_filename_and_copies_thumbnail(
     monkeypatch,
 ):

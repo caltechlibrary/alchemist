@@ -335,6 +335,8 @@
     <footer class="container">
       <article>{{ rights }}</article>
     </footer>
-    <img referrerpolicy="no-referrer-when-downgrade" src="https://caltechlibrary.matomo.cloud/matomo.php?idsite=5&amp;rec=1" style="border:0" alt="">
+    {% if matomo_tracker_url %}
+    <img referrerpolicy="no-referrer-when-downgrade" src="{{ matomo_tracker_url }}" style="border:0" alt="">
+    {% endif %}
   </body>
 </html>

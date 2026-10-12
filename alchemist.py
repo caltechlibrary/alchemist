@@ -108,6 +108,19 @@ def get_frontend_assets_marker_key(package: str) -> str:
     return f"{get_frontend_package_key_prefix(package)}/.published.json"
 
 
+def get_matomo_tracker_url() -> str:
+    """Return the Matomo image-tracker URL for generated pages, or "" when
+    MATOMO_URL and MATOMO_SITE_ID aren't both set, which leaves the tracker
+    out. The "&" is pre-escaped because the page templates don't autoescape."""
+    matomo_url = str(config("MATOMO_URL", default="")).strip()
+    site_id = str(config("MATOMO_SITE_ID", default="")).strip()
+    if not (matomo_url and site_id):
+        return ""
+    if not urllib.parse.urlparse(matomo_url).scheme:
+        matomo_url = f"https://{matomo_url}"
+    return f"{matomo_url.rstrip('/')}/matomo.php?idsite={site_id}&amp;rec=1"
+
+
 def get_frontend_asset_path(package: str, path: str) -> str:
     """Return the root-relative URL of a file in a self-hosted
     FRONTEND_PACKAGES package; `path` is relative to the package root, e.g.
@@ -197,6 +210,8 @@ ALCHEMIST_SETTINGS_SPEC = [
     {"key": "RELATIVE_SOURCE_DIRECTORY", "kind": "string"},
     {"key": "RELATIVE_BATCH_DIRECTORY", "kind": "string"},
     {"key": "FILES_TO_REMOVE", "kind": "csv", "required": False},
+    {"key": "MATOMO_URL", "kind": "url", "required": False},
+    {"key": "MATOMO_SITE_ID", "kind": "int", "required": False},
 ]
 
 
@@ -1188,6 +1203,7 @@ def generate_archival_object_page(
                         "universalviewer", "dist/uv.css"
                     ),
                     rights=RIGHTS_NOTICE_HTML,
+                    matomo_tracker_url=get_matomo_tracker_url(),
                 )
             )
         logger.debug(
