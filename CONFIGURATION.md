@@ -24,11 +24,11 @@ The machine that runs Alchemist needs:
 
 - the source volumes mounted under `SOURCE_MOUNT_PARENT`
 - the external tools named by `MAGICK_CMD`, `VIPS_CMD` (built with PDF
-  support), `FFPROBE_CMD`, `FFMPEG_CMD` and `S5CMD_CMD`
-- network access to the S3 buckets, CloudFront and ArchivesSpace API in the
+  support), `FFPROBE_CMD`, `FFMPEG_CMD`, and `S5CMD_CMD`
+- network access to the S3 buckets, CloudFront, and the ArchivesSpace API in the
   settings, and to github.com for the `arkminter` and `cascflow` dependencies
 
 ## Logging
 
-The `[loggers]`, `[handlers]` and `[formatters]` sections configure logging.
+The `[loggers]`, `[handlers]`, and `[formatters]` sections configure logging.
 The example writes `alchemist.log` to the current working directory.

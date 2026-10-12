@@ -110,8 +110,8 @@ def get_frontend_assets_marker_key(package: str) -> str:
 
 def get_matomo_tracker_url() -> str:
     """Return the Matomo image-tracker URL for generated pages, or "" when
-    MATOMO_URL and MATOMO_SITE_ID aren't both set, which leaves the tracker
-    out. The "&" is pre-escaped because the page templates don't autoescape."""
+    MATOMO_URL and MATOMO_SITE_ID aren’t both set, which leaves the tracker
+    out. The "&" is pre-escaped because the page templates don’t autoescape."""
     matomo_url = str(config("MATOMO_URL", default="")).strip()
     site_id = str(config("MATOMO_SITE_ID", default="")).strip()
     if not (matomo_url and site_id):
