@@ -1327,7 +1327,7 @@ def migrate_legacy_s3_object(
     digital object's Web-Access file_version) to the ARK-based layout. Writes
     zero-byte WebsiteRedirectLocation markers at the legacy keys so old
     bookmarks/search-engine links keep working. When copy_ptifs, also S3-copies
-    (no image reprocessing) the existing ptifs/mp4s to the new ARK key -- used
+    (no image reprocessing) the existing PTIFs/mp4s to the new ARK key -- used
     by the metadata-only pipeline, which generates no fresh derivatives itself;
     the full publish/files pipeline passes copy_ptifs=False since it already
     uploaded fresh derivatives straight to the ARK key. Does not touch the
@@ -1402,11 +1402,11 @@ def migrate_legacy_s3_object(
     for filename in legacy_mp4_filenames:
         sequenced_filepaths.setdefault(get_sequence_indicator(Path(filename)), Path(filename))
 
-    # A ptif's new key's filename must be {indicator}.ptif, matching how
+    # A PTIF's new key's filename must be {indicator}.ptif, matching how
     # get_thumbnail_url()/build_current_file_versions() construct the
     # ARK-based IIIF identifier from the indicator alone -- legacy filenames
     # don't necessarily already follow that convention (pre-ARK naming used
-    # the source file's own stem), so ptif copies rename rather than
+    # the source file's own stem), so PTIF copies rename rather than
     # preserve. An mp4 keeps its filename, as it does in a full
     # files/publication run; generate_archival_object_page() links to it by
     # that name. Its thumbnail.webp is what get_thumbnail_url() points the

@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- `scripts/backfill_pyramid_tiff_metadata.py`, the one-off backfill of pyramid TIFF metadata, which has been run
+- `scripts/backfill_pyramid_tiff_metadata.py`, the one-off backfill of metadata for pyramid TIFFs published before 3.4.0
 
 ### Fixed
 

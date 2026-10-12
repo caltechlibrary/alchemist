@@ -1215,7 +1215,7 @@ def test_migrate_legacy_s3_object_renames_to_canonical_indicator_filenames(
 def test_migrate_legacy_s3_object_uses_thumbnail_url_for_component_id_named_file(
     monkeypatch,
 ):
-    # Some collections name their legacy ptifs after the component_id
+    # Some collections name their legacy PTIFs after the component_id
     # itself (e.g. EX-7.ptif), with no sequence suffix at all, so
     # get_sequence_indicator() would derive a nonsense indicator ("ex-7")
     # from the filename -- the representative filename must instead be

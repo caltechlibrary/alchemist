@@ -78,7 +78,7 @@ from the incoming list is kept, but demoted to `publish: false` and
 ARK, it is relabelled `URL-Redirected`, sending it to the end of the order.
 That ARK test is the whole point of the rule: it separates an entry retired by
 the ARK migration from one merely superseded by a newer same-scheme entry
-(re-sequenced ptifs, for instance), which keeps its original
+(re-sequenced PTIFs, for instance), which keeps its original
 `use_statement`.
 
 ### Consequences
