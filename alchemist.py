@@ -10,6 +10,7 @@ import mimetypes
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import urllib.parse
 
 from collections import defaultdict
@@ -136,47 +137,60 @@ def get_frontend_asset_path(package: str, path: str) -> str:
     )
 
 
+VALIDATE_DESCRIPTION = (
+    "Check settings, published front-end assets, source files, and "
+    "ArchivesSpace records without publishing anything."
+)
+EXECUTE_DESCRIPTION = "Publish. Run validate with the same target and context first."
+TARGETS_EPILOG = """\
+targets:
+  publication  Publish source files for archival objects that have no
+               published files yet. CONTEXT is the name of a volume under
+               SOURCE_MOUNT_PARENT.
+  files        Replace the published files of archival objects from a
+               source volume, and update their digital object records.
+               CONTEXT is a volume name, as for publication.
+  metadata     Regenerate the published page and records of one archival
+               object from current ArchivesSpace metadata, without source
+               files. CONTEXT is its component unique identifier.
+"""
+
 parser = argparse.ArgumentParser(
-    description="Publication workflow for Caltech Archives."
+    description=(
+        "Publish digital material described in ArchivesSpace. Run validate "
+        "first, review its output, then run execute with the same target and "
+        "context."
+    )
 )
 parser.add_argument(
     "--settings",
     default=None,
-    help="Path to settings.ini file (optional). Defaults to settings.ini next to alchemist.py.",
+    help="Path to settings.ini (default: settings.ini next to alchemist.py).",
 )
 subparsers = parser.add_subparsers(dest="command", required=True)
-
-# subcommand: validate
-validate_parser = subparsers.add_parser(
-    "validate", help="Validate connections, files, and data."
-)
-validate_parser.add_argument(
-    "--target",
-    required=True,
-    choices=["publication", "metadata", "files"],
-    help="String. Target for validation. Limited choices.",
-)
-validate_parser.add_argument(
-    "--context",
-    required=True,
-    help="String. Supply a volume name or an identifier, depending on the target.",
-)
-
-# subcommand: execute
-execute_parser = subparsers.add_parser(
-    "execute", help="Execute the publication process."
-)
-execute_parser.add_argument(
-    "--target",
-    required=True,
-    choices=["publication", "metadata", "files"],
-    help="String. Target for validation. Limited choices.",
-)
-execute_parser.add_argument(
-    "--context",
-    required=True,
-    help="String. Supply a volume name or an identifier, depending on the target.",
-)
+for command, description in (
+    ("validate", VALIDATE_DESCRIPTION),
+    ("execute", EXECUTE_DESCRIPTION),
+):
+    subparser = subparsers.add_parser(
+        command,
+        help=description,
+        description=textwrap.fill(description, 76),
+        epilog=TARGETS_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparser.add_argument(
+        "--target",
+        required=True,
+        choices=["publication", "files", "metadata"],
+        help="What to publish; see targets below.",
+    )
+    subparser.add_argument(
+        "--context",
+        required=True,
+        help="A volume name or a component unique identifier, depending on "
+        "the target.",
+    )
 
 args = None
 settings_path = None
