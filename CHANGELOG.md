@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- generated pages escape the archival object’s title, so markup, quotation marks, or `&` in a title can’t break the page’s HTML
 - `--settings` help states the actual default, `settings.ini` next to `alchemist.py`
 
 ## [3.7.0]

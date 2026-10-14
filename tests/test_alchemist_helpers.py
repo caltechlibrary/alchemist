@@ -1767,6 +1767,37 @@ def _render_video_page(monkeypatch, config):
     ).read_text()
 
 
+def test_generated_page_escapes_the_title(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    archival_object["title"] = 'A "quoted" <emph render="italic">Title</emph> & more'
+    arrangement = {
+        "collection_id": "collection_1",
+        "collection_title": "Collection 1",
+        "collection_uri": "/repositories/2/resources/1",
+    }
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    alchemist.generate_archival_object_page(
+        build_directory,
+        archival_object,
+        arrangement,
+        mimetype="video/mp4",
+        media_filename="aspace_1.mp4",
+    )
+    page = (
+        Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
+    ).read_text()
+    escaped = (
+        "A &#34;quoted&#34; &lt;emph render=&#34;italic&#34;&gt;Title&lt;/emph&gt;"
+        " &amp; more"
+    )
+    assert f"<title>{escaped}</title>" in page
+    assert f'title="open the {escaped} collection guide metadata record"' in page
+    assert "<emph" not in page
+
+
 def test_generated_page_omits_matomo_tracker_by_default(monkeypatch):
     page = _render_video_page(monkeypatch, _video_config)
     assert "matomo" not in page
