@@ -4,7 +4,7 @@
   "name": "Alchemist",
   "identifier": "alchemist",
   "description": "Caltech Archives Publication & Access System: validates and publishes digital files and their ArchivesSpace metadata.",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "dateCreated": "2025-04-22",
   "author": [
     {
