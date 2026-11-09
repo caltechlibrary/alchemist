@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- multi-part video: a directory of MP4s with sequence indicators, such as a lecture digitized from two tapes, is published as one digital object whose page stacks a player for each part in sequence order, captioned “Part 1 of 2”, “Part 2 of 2”, and so on; the first part’s midpoint frame is the object’s `thumbnail.webp`
+- `validate` rejects a directory that mixes images and MP4s
+
+### Changed
+
+- the `metadata` target recognizes a published multi-part video, and raises if the published MP4s’ sequence indicators aren’t distinct and contiguous, since publishing leaves earlier files in place and a stale MP4 would otherwise appear as an extra part
+
 ## [3.8.0]
 
 ### Added

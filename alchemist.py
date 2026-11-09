@@ -1094,8 +1094,11 @@ def generate_archival_object_page(
     archival_object: dict,
     arrangement: dict,
     mimetype: str,
-    media_filename: str = "",
+    media_filenames: list[str] | None = None,
 ) -> None:
+    """Write the archival object's index.html. A video or PDF page plays
+    or displays media_filenames, published alongside it, in order; any
+    other page shows its IIIF manifest in Universal Viewer."""
     try:
         logger.debug(f"🐞 BUILD_DIRECTORY.NAME: {build_directory.name}")
         environment = jinja2.Environment(
@@ -1104,39 +1107,42 @@ def generate_archival_object_page(
             lstrip_blocks=True,
         )
         iiif_manifest_url = ""
-        video_url = ""
+        video_urls = []
         pdf_viewer_url = ""
         if mimetype in SINGLE_FILE_MEDIA_TYPES.values():
             # root-relative: the page and its media are always served from
             # the same host, so leaving the host out keeps the page working
             # if the site's hostname changes
-            media_url = "/".join(
-                [
-                    urllib.parse.urlparse(config("ALCHEMIST_BASE_URL")).path.rstrip(
-                        "/"
-                    ),
-                    # TODO handle potential ARK Qualifier upstream
-                    archival_object["external_ark_url"]
-                    .split(config("OUR_NMA"))[-1]
-                    .split("/")[1],
-                    archival_object["external_ark_url"]
-                    .split(config("OUR_NMA"))[-1]
-                    .split("/")[2],
-                    media_filename,
-                ]
-            )
+            media_urls = [
+                "/".join(
+                    [
+                        urllib.parse.urlparse(
+                            config("ALCHEMIST_BASE_URL")
+                        ).path.rstrip("/"),
+                        # TODO handle potential ARK Qualifier upstream
+                        archival_object["external_ark_url"]
+                        .split(config("OUR_NMA"))[-1]
+                        .split("/")[1],
+                        archival_object["external_ark_url"]
+                        .split(config("OUR_NMA"))[-1]
+                        .split("/")[2],
+                        media_filename,
+                    ]
+                )
+                for media_filename in media_filenames or []
+            ]
             if mimetype == "application/pdf":
                 template = environment.get_template("pdf.tpl")
                 # PDF.js's viewer only opens files from its own origin, which
                 # a root-relative path always is
                 pdf_viewer_url = "{}?file={}".format(
                     get_frontend_asset_path("pdfjs", "web/viewer.html"),
-                    urllib.parse.quote(media_url, safe=""),
+                    urllib.parse.quote(media_urls[0], safe=""),
                 )
             else:
                 # NOTE template currently only handles mp4 files
                 template = environment.get_template("video.tpl")
-                video_url = media_url
+                video_urls = media_urls
         else:
             template = environment.get_template("iiif.tpl")
             # TODO Q: should this be a resolver link instead of a direct link to the manifest file?
@@ -1207,7 +1213,7 @@ def generate_archival_object_page(
                     archival_object_uri=archival_object["uri"],
                     iiif_manifest_url=iiif_manifest_url,
                     iiif_manifest_json=json.dumps({"manifest": iiif_manifest_url}),
-                    video_url=video_url,
+                    video_urls=video_urls,
                     pdf_viewer_url=pdf_viewer_url,
                     pico_css_url=get_frontend_asset_path("pico", "css/pico.min.css"),
                     uv_js_url=get_frontend_asset_path(
@@ -1275,11 +1281,17 @@ def get_published_key_prefix(archival_object: dict) -> str:
     )
 
 
-def get_published_media(archival_object: dict) -> tuple[str, str] | None:
-    """Return (mimetype, filename) of the single-file media (an MP4 or a PDF)
-    published for archival_object, or None if it has none. The metadata-only
-    pipeline has no source files to read a mimetype from, so what is already
-    in S3 is the only record of what kind of object it is."""
+def get_published_media(archival_object: dict) -> tuple[str, list[str]] | None:
+    """Return (mimetype, filenames) of the media published for
+    archival_object -- one PDF, or one or more MP4s in sequence order -- or
+    None if it has none. The metadata-only pipeline has no source files to
+    read a mimetype from, so what is already in S3 is the only record of
+    what kind of object it is.
+
+    Publishing leaves files from an earlier publication in place, so
+    several MP4s must have distinct, contiguous sequence indicators to be
+    read as parts of one recording; anything else is more likely a stale
+    file alongside the current ones, and raises."""
     prefix = get_published_key_prefix(archival_object)
     media_filenames = [
         key.rsplit("/", 1)[-1]
@@ -1288,12 +1300,23 @@ def get_published_media(archival_object: dict) -> tuple[str, str] | None:
         )
         if Path(key).suffix.lower() in SINGLE_FILE_MEDIA_TYPES
     ]
-    if len(media_filenames) > 1:
-        raise ValueError(f"❌ MULTIPLE MEDIA FILES PUBLISHED UNDER: {prefix}")
     if not media_filenames:
         return None
-    filename = media_filenames[0]
-    return SINGLE_FILE_MEDIA_TYPES[Path(filename).suffix.lower()], filename
+    media_types = {
+        SINGLE_FILE_MEDIA_TYPES[Path(filename).suffix.lower()]
+        for filename in media_filenames
+    }
+    if len(media_filenames) > 1:
+        if media_types != {"video/mp4"}:
+            raise ValueError(f"❌ MULTIPLE MEDIA FILES PUBLISHED UNDER: {prefix}")
+        if not has_distinct_contiguous_sequence_indicators(media_filenames):
+            raise ValueError(
+                "❌ VIDEOS WITHOUT DISTINCT, CONTIGUOUS SEQUENCE INDICATORS"
+                f" PUBLISHED UNDER: {prefix}"
+            )
+    return media_types.pop(), sorted(
+        media_filenames, key=lambda filename: get_sequence_indicator(Path(filename))
+    )
 
 
 def get_legacy_thumbnail_identifier(archival_object: dict) -> str | None:
@@ -1801,16 +1824,22 @@ def copy_video_with_thumbnail(
     filepath: Path,
     archival_object: dict,
     arrangement: dict,
+    write_thumbnail: bool,
 ) -> None:
     """Copy a video to the build directory as published, keeping its
-    filename, with a 200-pixel-wide thumbnail.webp of its midpoint frame
-    alongside it. Failures raise, so loop_over_archival_object_files()
-    reports them instead of publishing the object without its video."""
+    filename. With write_thumbnail, also write a 200-pixel-wide
+    thumbnail.webp of its midpoint frame alongside it; an object with
+    several sequenced videos has one thumbnail, taken from the first.
+    Failures raise, so loop_over_archival_object_files() reports them
+    instead of publishing the object without its video."""
     video_path = Path(build_directory.name).joinpath(
         arrangement["collection_id"], archival_object["component_id"], filepath.name
     )
     video_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(filepath, video_path)
+    if not write_thumbnail:
+        logger.info(f"☑️ VIDEO FILE COPIED: {video_path.name}")
+        return
     duration = subprocess.run(
         [
             config("FFPROBE_CMD"),
@@ -1894,6 +1923,7 @@ def conditional_derivative_file_processing(
     archival_object: dict,
     arrangement: dict,
     sequence_indicator: str,
+    is_first_file: bool,
 ) -> None:
     type, encoding = mimetypes.guess_type(filepath.as_posix())
 
@@ -1907,7 +1937,11 @@ def conditional_derivative_file_processing(
         )
     elif type.startswith("video/"):
         copy_video_with_thumbnail(
-            build_directory, filepath, archival_object, arrangement
+            build_directory,
+            filepath,
+            archival_object,
+            arrangement,
+            write_thumbnail=is_first_file,
         )
     elif type == "application/pdf":
         copy_pdf_with_thumbnail(build_directory, filepath, archival_object, arrangement)
@@ -1925,6 +1959,7 @@ def loop_over_archival_object_files(
     sequenced_filepaths: dict[str, Path],
 ) -> None:
     """Concurrently process files in the filepaths list."""
+    first_sequence_indicator = next(iter(sequenced_filepaths))
     with ProcessPoolExecutor(
         initializer=_worker_init, initargs=(str(settings_path),)
     ) as executor:
@@ -1936,6 +1971,7 @@ def loop_over_archival_object_files(
                 archival_object,
                 arrangement,
                 sequence_indicator,
+                sequence_indicator == first_sequence_indicator,
             ): filepath
             # for filepath in filepaths
             for sequence_indicator, filepath in sequenced_filepaths.items()
@@ -1966,18 +2002,23 @@ def archival_object_level_processing(
 ) -> None:
     logger.debug(f"🐞 {archival_object['component_id']}")
     mimetype = ""
-    media_filename = ""
-    if filepaths and len(filepaths) == 1:
-        type, encoding = mimetypes.guess_type(filepaths[0].as_posix())
-        if type in SINGLE_FILE_MEDIA_TYPES.values():
-            mimetype = type
-            media_filename = filepaths[0].name
-    elif not filepaths:
+    media_filenames = []
+    if filepaths:
+        types = {mimetypes.guess_type(path.as_posix())[0] for path in filepaths}
+        if types == {"video/mp4"}:
+            # one video, or several played in sequence, like a lecture that
+            # spans more than one tape
+            mimetype = "video/mp4"
+            media_filenames = [path.name for path in sequenced_filepaths.values()]
+        elif len(filepaths) == 1 and types <= set(SINGLE_FILE_MEDIA_TYPES.values()):
+            mimetype = types.pop()
+            media_filenames = [filepaths[0].name]
+    else:
         published_media = get_published_media(archival_object)
         if published_media:
-            mimetype, media_filename = published_media
+            mimetype, media_filenames = published_media
     generate_archival_object_page(
-        build_directory, archival_object, arrangement, mimetype, media_filename
+        build_directory, archival_object, arrangement, mimetype, media_filenames
     )
     # `filepaths`` is set to [] if we are only updating metadata.
     generate_iiif_manifest(
@@ -2017,6 +2058,19 @@ def _parse_indicator(stem: str) -> tuple[int, str | None] | None:
     if not digits.isdigit():
         return None
     return (int(digits), rv)
+
+
+def has_distinct_contiguous_sequence_indicators(filenames) -> bool:
+    """
+    Returns True if every filename has a plain numeric sequence indicator
+    (no recto/verso suffix), no two share a number, and the numbers form
+    an unbroken range, e.g. lecture_1.mp4 and lecture_2.mp4.
+    """
+    indicators = [_parse_indicator(Path(filename).stem) for filename in filenames]
+    if any(indicator is None or indicator[1] for indicator in indicators):
+        return False
+    nums = sorted(num for num, _ in indicators)
+    return nums == list(range(nums[0], nums[0] + len(nums)))
 
 
 def has_valid_sequence_indicators(filepaths) -> bool:
@@ -2305,6 +2359,7 @@ def validate_digital_files_for_publication(
     file_count = validation_results.get("file_count", 0)
     unsupported_files = []
     pdfs_in_directories = []
+    mixed_media_directories = []
     unrenderable_pdfs = []
     missing_sequence_indicators = []
     sequence_indicators = {}
@@ -2349,6 +2404,13 @@ def validate_digital_files_for_publication(
                 elif child.suffix.lower() == ".pdf":
                     # a PDF is published as an archival object's only file
                     pdfs_in_directories.append(child)
+            # a directory is published as either a IIIF image sequence or
+            # sequenced videos played one after another, never both
+            video_children = [
+                child for child in children if child.suffix.lower() == ".mp4"
+            ]
+            if video_children and len(video_children) < len(children):
+                mixed_media_directories.append(entry)
             logger.debug(
                 f"🐞 SEQUENCE_INDICATORS for {entry.stem}: {sequence_indicators[entry.stem]}"
             )
@@ -2399,6 +2461,12 @@ def validate_digital_files_for_publication(
         logger.error(message)
         for pdf in pdfs_in_directories:
             logger.error(f"❌ {pdf}")
+        raise RuntimeError(message)
+    if mixed_media_directories:
+        message = "❌ DIRECTORIES MUST CONTAIN ONLY IMAGES OR ONLY MP4 VIDEOS"
+        logger.error(message)
+        for directory in mixed_media_directories:
+            logger.error(f"❌ {directory}")
         raise RuntimeError(message)
     if unrenderable_pdfs:
         message = "❌ PDFS VIPS CAN'T RENDER A THUMBNAIL FROM"

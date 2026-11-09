@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import shutil
 import subprocess
@@ -1620,7 +1621,7 @@ def test_get_published_media_lists_ark_prefix(monkeypatch):
 
     assert alchemist.get_published_media(archival_object) == (
         "video/mp4",
-        "aspace_1.mp4",
+        ["aspace_1.mp4"],
     )
     assert listed_prefixes == ["ark:99999/abc123x/"]
 
@@ -1642,7 +1643,7 @@ def test_get_published_media_lists_legacy_prefix(monkeypatch):
 
     assert alchemist.get_published_media(archival_object) == (
         "video/mp4",
-        "aspace_1.mp4",
+        ["aspace_1.mp4"],
     )
     assert listed_prefixes == ["collections/collection_1/aspace_1/"]
 
@@ -1664,7 +1665,7 @@ def test_get_published_media_returns_none_for_images(monkeypatch):
     assert alchemist.get_published_media(archival_object) is None
 
 
-def test_get_published_media_raises_on_multiple_media_files(monkeypatch):
+def test_get_published_media_lists_sequenced_videos_in_order(monkeypatch):
     archival_object = _published_video_archival_object(
         "https://digital.example.edu/ark:99999/abc123x"
     )
@@ -1673,8 +1674,57 @@ def test_get_published_media_raises_on_multiple_media_files(monkeypatch):
         alchemist.cascflow,
         "s3_list_object_keys",
         lambda bucket, prefix: [
-            "ark:99999/abc123x/a.mp4",
-            "ark:99999/abc123x/b.mp4",
+            "ark:99999/abc123x/index.html",
+            "ark:99999/abc123x/lecture_10.mp4",
+            "ark:99999/abc123x/lecture_9.mp4",
+            "ark:99999/abc123x/thumbnail.webp",
+        ],
+    )
+
+    assert alchemist.get_published_media(archival_object) == (
+        "video/mp4",
+        ["lecture_9.mp4", "lecture_10.mp4"],
+    )
+
+
+@pytest.mark.parametrize(
+    "filenames",
+    [
+        # a stale single video beside the current two parts
+        ["aspace_1.mp4", "lecture_1.mp4", "lecture_2.mp4"],
+        ["lecture_1.mp4", "lecture_3.mp4"],
+        ["a.mp4", "b.mp4"],
+        ["lecture_1r.mp4", "lecture_1v.mp4"],
+    ],
+)
+def test_get_published_media_raises_on_videos_that_are_not_one_sequence(
+    monkeypatch, filenames
+):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [f"ark:99999/abc123x/{name}" for name in filenames],
+    )
+
+    with pytest.raises(ValueError, match="DISTINCT, CONTIGUOUS SEQUENCE INDICATORS"):
+        alchemist.get_published_media(archival_object)
+
+
+def test_get_published_media_raises_on_multiple_pdfs(monkeypatch):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    monkeypatch.setattr(alchemist, "config", _video_config)
+    monkeypatch.setattr(
+        alchemist.cascflow,
+        "s3_list_object_keys",
+        lambda bucket, prefix: [
+            "ark:99999/abc123x/report_1.pdf",
+            "ark:99999/abc123x/report_2.pdf",
         ],
     )
 
@@ -1736,13 +1786,81 @@ def test_generate_archival_object_page_links_published_video_file(
         archival_object,
         arrangement,
         mimetype="video/mp4",
-        media_filename="example_05_01.mp4",
+        media_filenames=["example_05_01.mp4"],
     )
 
     page = (
         Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
     ).read_text()
     assert '<source src="/ark:99999/abc123x/example_05_01.mp4"' in page
+    assert "<figcaption>" not in page
+
+
+def test_generate_archival_object_page_stacks_sequenced_videos_in_order(
+    monkeypatch,
+):
+    archival_object = _published_video_archival_object(
+        "https://digital.example.edu/ark:99999/abc123x"
+    )
+    arrangement = {
+        "collection_id": "collection_1",
+        "collection_uri": "/repositories/2/resources/1",
+    }
+    build_directory = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(alchemist, "config", _video_config)
+
+    alchemist.generate_archival_object_page(
+        build_directory,
+        archival_object,
+        arrangement,
+        mimetype="video/mp4",
+        media_filenames=["lecture_1.mp4", "lecture_2.mp4"],
+    )
+
+    page = (
+        Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
+    ).read_text()
+    part_1 = page.index("<figcaption>Part 1 of 2</figcaption>")
+    source_1 = page.index('<source src="/ark:99999/abc123x/lecture_1.mp4"')
+    part_2 = page.index("<figcaption>Part 2 of 2</figcaption>")
+    source_2 = page.index('<source src="/ark:99999/abc123x/lecture_2.mp4"')
+    assert part_1 < source_1 < part_2 < source_2
+    assert page.count('preload="metadata"') == 2
+
+
+@pytest.mark.parametrize(
+    "filenames, mimetype, media_filenames",
+    [
+        (["lecture_2.mp4", "lecture_1.mp4"], "video/mp4", ["lecture_1.mp4", "lecture_2.mp4"]),
+        (["aspace_1.mp4"], "video/mp4", ["aspace_1.mp4"]),
+        (["report.pdf"], "application/pdf", ["report.pdf"]),
+        (["page_1.jpg", "page_2.jpg"], "", []),
+    ],
+)
+def test_archival_object_level_processing_chooses_the_page_type(
+    monkeypatch, filenames, mimetype, media_filenames
+):
+    filepaths = [Path(filename) for filename in filenames]
+    sequenced_filepaths = {
+        alchemist.get_sequence_indicator(path): path
+        for path in sorted(filepaths, key=alchemist.get_sequence_indicator)
+    }
+    pages = []
+    monkeypatch.setattr(
+        alchemist,
+        "generate_archival_object_page",
+        lambda *args: pages.append(args[3:]),
+    )
+    monkeypatch.setattr(alchemist, "generate_iiif_manifest", lambda *args: None)
+    monkeypatch.setattr(
+        alchemist, "loop_over_archival_object_files", lambda *args: None
+    )
+
+    alchemist.archival_object_level_processing(
+        None, filepaths, {"component_id": "aspace_1"}, {}, sequenced_filepaths
+    )
+
+    assert pages == [(mimetype, media_filenames)]
 
 
 def _render_video_page(monkeypatch, config):
@@ -1760,7 +1878,7 @@ def _render_video_page(monkeypatch, config):
         archival_object,
         arrangement,
         mimetype="video/mp4",
-        media_filename="aspace_1.mp4",
+        media_filenames=["aspace_1.mp4"],
     )
     return (
         Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
@@ -1784,7 +1902,7 @@ def test_generated_page_escapes_the_title(monkeypatch):
         archival_object,
         arrangement,
         mimetype="video/mp4",
-        media_filename="aspace_1.mp4",
+        media_filenames=["aspace_1.mp4"],
     )
     page = (
         Path(build_directory.name) / "collection_1" / "aspace_1" / "index.html"
@@ -2050,7 +2168,7 @@ def test_get_published_media_finds_a_pdf(monkeypatch):
 
     assert alchemist.get_published_media(archival_object) == (
         "application/pdf",
-        "Report.PDF",
+        ["Report.PDF"],
     )
 
 
@@ -2089,7 +2207,7 @@ def test_generate_archival_object_page_embeds_the_pdfjs_viewer(monkeypatch):
         archival_object,
         arrangement,
         mimetype="application/pdf",
-        media_filename="report.pdf",
+        media_filenames=["report.pdf"],
     )
 
     page = (
@@ -2206,7 +2324,7 @@ def test_render_pdf_thumbnail_is_200_pixels_wide(monkeypatch, tmp_path):
     assert "200x300" in header
 
 
-def _validate_pdf_source(monkeypatch, tmp_path, entries, render=None):
+def _validate_source(monkeypatch, tmp_path, entries, render=None):
     source = tmp_path / "source"
     source.mkdir()
     for relative, content in entries.items():
@@ -2228,7 +2346,7 @@ def _validate_pdf_source(monkeypatch, tmp_path, entries, render=None):
 
 
 def test_validate_digital_files_accepts_a_single_renderable_pdf(monkeypatch, tmp_path):
-    validation_results = _validate_pdf_source(
+    validation_results = _validate_source(
         monkeypatch,
         tmp_path,
         {"report.pdf": MINIMAL_PDF},
@@ -2239,7 +2357,7 @@ def test_validate_digital_files_accepts_a_single_renderable_pdf(monkeypatch, tmp
 
 
 def test_validate_digital_files_rejects_a_pdf_in_a_directory(monkeypatch, tmp_path):
-    validation_results = _validate_pdf_source(
+    validation_results = _validate_source(
         monkeypatch,
         tmp_path,
         {"report/report_0001.pdf": MINIMAL_PDF},
@@ -2249,11 +2367,34 @@ def test_validate_digital_files_rejects_a_pdf_in_a_directory(monkeypatch, tmp_pa
         alchemist.validate_digital_files_for_publication(validation_results, "files")
 
 
+def test_validate_digital_files_accepts_a_directory_of_sequenced_videos(
+    monkeypatch, tmp_path
+):
+    validation_results = _validate_source(
+        monkeypatch,
+        tmp_path,
+        {"lecture/lecture_1.mp4": b"tape 1", "lecture/lecture_2.mp4": b"tape 2"},
+    )
+
+    alchemist.validate_digital_files_for_publication(validation_results, "files")
+
+
+def test_validate_digital_files_rejects_videos_mixed_with_images(monkeypatch, tmp_path):
+    validation_results = _validate_source(
+        monkeypatch,
+        tmp_path,
+        {"lecture/lecture_1.mp4": b"tape 1", "lecture/lecture_2.jpg": b"image"},
+    )
+
+    with pytest.raises(RuntimeError, match="ONLY IMAGES OR ONLY MP4 VIDEOS"):
+        alchemist.validate_digital_files_for_publication(validation_results, "files")
+
+
 def test_validate_digital_files_rejects_a_pdf_vips_cannot_render(monkeypatch, tmp_path):
     def fail_render(pdf_path, thumbnail_path):
         raise subprocess.CalledProcessError(1, ["vips"], stderr="not a known format")
 
-    validation_results = _validate_pdf_source(
+    validation_results = _validate_source(
         monkeypatch, tmp_path, {"report.pdf": b"not a pdf"}, render=fail_render
     )
 
@@ -2287,6 +2428,7 @@ def test_video_derivative_failure_propagates(monkeypatch, tmp_path):
             {"component_id": "aspace_1"},
             {"collection_id": "collection_1"},
             "0001",
+            True,
         )
 
 
@@ -2315,6 +2457,7 @@ def test_copy_video_with_thumbnail_uses_the_midpoint_frame(monkeypatch, tmp_path
         source,
         {"component_id": "aspace_1"},
         {"collection_id": "collection_1"},
+        write_thumbnail=True,
     )
 
     published = Path(build_directory.name) / "collection_1" / "aspace_1"
@@ -2324,3 +2467,63 @@ def test_copy_video_with_thumbnail_uses_the_midpoint_frame(monkeypatch, tmp_path
     assert ffmpeg[0] == "ffmpeg"
     assert ffmpeg[ffmpeg.index("-ss") + 1] == "5.0"
     assert ffmpeg[-1] == (published / "thumbnail.webp").as_posix()
+
+
+def test_copy_video_with_thumbnail_skips_the_thumbnail_for_a_later_tape(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "lecture_2.mp4"
+    source.write_bytes(b"tape 2")
+    build_directory = tempfile.TemporaryDirectory()
+
+    def fail_run(command, **kwargs):
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(alchemist.subprocess, "run", fail_run)
+
+    alchemist.copy_video_with_thumbnail(
+        build_directory,
+        source,
+        {"component_id": "lecture"},
+        {"collection_id": "collection_1"},
+        write_thumbnail=False,
+    )
+
+    published = Path(build_directory.name) / "collection_1" / "lecture"
+    assert (published / "lecture_2.mp4").read_bytes() == b"tape 2"
+    assert not (published / "thumbnail.webp").exists()
+
+
+def test_loop_over_archival_object_files_marks_only_the_first_file(monkeypatch):
+    calls = []
+
+    class InlineExecutor:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def submit(self, function, *args):
+            calls.append(args)
+            future = concurrent.futures.Future()
+            future.set_result(None)
+            return future
+
+    monkeypatch.setattr(alchemist, "ProcessPoolExecutor", InlineExecutor)
+    sequenced_filepaths = {
+        "0001": Path("lecture_1.mp4"),
+        "0002": Path("lecture_2.mp4"),
+    }
+
+    alchemist.loop_over_archival_object_files(
+        None, list(sequenced_filepaths.values()), {}, {}, sequenced_filepaths
+    )
+
+    assert [(args[1].name, args[-1]) for args in calls] == [
+        ("lecture_1.mp4", True),
+        ("lecture_2.mp4", False),
+    ]
