@@ -16,8 +16,8 @@ Alchemist passed in, and nothing in this repository says so:
   Alchemist listed them.
 - Some of Alchemist’s *existing* entries are **relabelled** with a
   `use_statement` Alchemist never writes.
-- Entries Alchemist didn’t touch are **demoted** to `publish: false` and
-  `is_representative: false`.
+- Entries Alchemist didn’t pass but owns are **demoted** to `publish: false`
+  and `is_representative: false`; other pipelines’ entries are left alone.
 - The `digital_object` itself has its `digital_object_id`, `title`, and
   `publish` fields overwritten as a side effect of saving file_versions.
 
@@ -58,7 +58,7 @@ in the public interface with no error anywhere.
 reimplemented, shadowed, or pre-empted in Alchemist. This ADR is the reference
 for what that costs Alchemist.
 
-The rules cascflow applies, as of cascflow v5.0.0:
+The rules cascflow applies, as of cascflow v5.1.0:
 
 | Position | `use_statement` | Written by |
 |---|---|---|
@@ -72,8 +72,14 @@ The rules cascflow applies, as of cascflow v5.0.0:
 An unrecognized `use_statement` sorts after all recognized ones, stably.
 
 The merge is keyed by `file_uri`. An existing entry whose `file_uri` is absent
-from the incoming list is kept, but demoted to `publish: false` and
-`is_representative: false`. If that entry is an `image-thumbnail` or
+from the incoming list is kept. It is demoted to `publish: false` and
+`is_representative: false` only when the caller owns it: its `use_statement`
+is one the caller is writing, or it has no `use_statement` from the table
+(a hand-entered YouTube link, a share-drive path). Any other entry belongs to
+another pipeline and is left as it was, so Distillery saving its
+`OCFL-Object-Root` leaves Alchemist’s published thumbnail in place, and
+Alchemist leaves Distillery’s entry alone. If a demoted entry is an
+`image-thumbnail` or
 `Web-Access` one **and** its `file_uri` does not contain the object’s current
 ARK, it is relabelled `URL-Redirected`, sending it to the end of the order.
 That ARK test is the whole point of the rule: it separates an entry retired by
