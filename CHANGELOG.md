@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.1]
+
+### Fixed
+
+- a Distillery run after an Alchemist run no longer unpublishes the digital object’s thumbnail, `Persistent-URL`, and `Web-Access` file versions, which left the public UI without a thumbnail (cascflow v5.1.0)
+
 ## [3.9.0]
 
 ### Added
